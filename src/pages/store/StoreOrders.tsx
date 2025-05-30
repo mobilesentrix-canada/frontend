@@ -45,8 +45,6 @@ export default function StoreOrders() {
     restoreOrderToCartError,
   } = useUserOrder();
 
-
-
   const getStatusColor = (status: string) => {
     switch (status) {
       case "pending":
@@ -80,14 +78,14 @@ export default function StoreOrders() {
 
   const handleStatusFilter = (status: string) => {
     setStatusFilter(status);
-    setCurrentPage(1); 
+    setCurrentPage(1);
   };
 
   const handleCancelOrder = async (orderId: number) => {
     if (window.confirm("Are you sure you want to cancel this order?")) {
       try {
         await cancelOrder(orderId);
-        refetch(); 
+        refetch();
       } catch (error) {
         console.error("Failed to cancel order:", error);
       }
@@ -102,20 +100,18 @@ export default function StoreOrders() {
     ) {
       try {
         await deleteOrder(orderId);
-        refetch(); 
+        refetch();
       } catch (error) {
         console.error("Failed to delete order:", error);
       }
     }
   };
 
-
   const canCancelOrder = (status: string) => status === "pending";
   const canDeleteOrder = (status: string) =>
     ["pending", "cancelled"].includes(status);
   const canRestoreToCart = (status: string) =>
     ["pending", "cancelled"].includes(status);
-
 
   const getProductImage = (productName: string, index: number) => {
     const placeholderColors = [
@@ -129,7 +125,6 @@ export default function StoreOrders() {
     return placeholderColors[index % placeholderColors.length];
   };
 
- 
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
     const placeholder = img.nextElementSibling as HTMLElement;
@@ -163,7 +158,6 @@ export default function StoreOrders() {
       </div>
     );
   }
-
 
   if (error) {
     return (
@@ -206,7 +200,6 @@ export default function StoreOrders() {
         </div>
       </div>
 
-
       <div className="mb-6">
         <h3 className="text-sm font-medium text-gray-700 mb-3">
           Filter by Status
@@ -240,7 +233,6 @@ export default function StoreOrders() {
         </div>
       </div>
 
-  
       {(cancelOrderError || deleteOrderError || restoreOrderToCartError) && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
           <div className="flex items-center mb-2">
@@ -252,11 +244,7 @@ export default function StoreOrders() {
               Cancel Error: {cancelOrderError.message}
             </p>
           )}
-          {deleteOrderError && (
-            <p className="text-red-700 text-sm">
-              Delete Error: {deleteOrderError.message}
-            </p>
-          )}
+
           {restoreOrderToCartError && (
             <p className="text-red-700 text-sm">
               Restore Error: {restoreOrderToCartError.message}
@@ -295,7 +283,7 @@ export default function StoreOrders() {
                   >
                     {order.status.toUpperCase()}
                   </Badge>
-                 
+
                   <p className="text-sm text-gray-500 mt-1">
                     {order.items_count} item{order.items_count !== 1 ? "s" : ""}
                   </p>
@@ -304,7 +292,6 @@ export default function StoreOrders() {
             </CardHeader>
 
             {(canCancelOrder(order.status) ||
-              canDeleteOrder(order.status) ||
               canRestoreToCart(order.status)) && (
               <div className="px-6 pb-4">
                 <div className="flex gap-2 flex-wrap">
@@ -318,17 +305,6 @@ export default function StoreOrders() {
                       {isCancellingOrder ? "Cancelling..." : "Cancel Order"}
                     </button>
                   )}
-
-                  {canDeleteOrder(order.status) && (
-                    <button
-                      onClick={() => handleDeleteOrder(order.id)}
-                      disabled={isDeletingOrder}
-                      className="flex items-center px-3 py-1.5 text-sm bg-red-100 text-red-800 rounded-lg hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      {isDeletingOrder ? "Deleting..." : "Delete Order"}
-                    </button>
-                  )}
                 </div>
               </div>
             )}
@@ -339,14 +315,12 @@ export default function StoreOrders() {
                   Order Items:
                 </h4>
                 <div className="grid gap-3">
-                 
                   {order.product_details && order.product_details.length > 0
                     ? order.product_details.map((product, index) => (
                         <div
                           key={`${product.product_id}-${index}`}
                           className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
                         >
-                     
                           <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-gray-200 relative">
                             {isValidImageUrl(product.image_url) ? (
                               <>
@@ -384,13 +358,11 @@ export default function StoreOrders() {
                             </p>
                             <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
                               <span>Qty: {product.quantity}</span>
-                              
                             </div>
                           </div>
                         </div>
                       ))
-                    : 
-                      order.product_names.map((productName, index) => (
+                    : order.product_names.map((productName, index) => (
                         <div
                           key={index}
                           className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
@@ -419,7 +391,6 @@ export default function StoreOrders() {
           </Card>
         ))}
       </div>
-
 
       {pagination && pagination.pages > 1 && (
         <div className="mt-10">

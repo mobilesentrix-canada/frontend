@@ -123,7 +123,6 @@ export default function ProductDetail() {
   const handleQuantityChange = (change: number) => {
     const newQuantity = quantity + change;
     if (newQuantity >= 1 && newQuantity <= 10) {
-
       setQuantity(newQuantity);
     }
   };
@@ -135,14 +134,11 @@ export default function ProductDetail() {
     }
   };
 
-
   const parseDescription = (description: string) => {
     if (!description) return null;
 
-  
     if (description.includes("<ul") && description.includes("<li")) {
       try {
-     
         const tempDiv = document.createElement("div");
         tempDiv.innerHTML = description;
 
@@ -185,7 +181,6 @@ export default function ProductDetail() {
       );
     }
 
-
     return (
       <p className="text-gray-700 leading-relaxed">
         {description ||
@@ -193,7 +188,6 @@ export default function ProductDetail() {
       </p>
     );
   };
-
 
   if (isLoading) {
     return (
@@ -224,7 +218,6 @@ export default function ProductDetail() {
     );
   }
 
-
   if (error) {
     return (
       <div className="px-4 py-6">
@@ -251,7 +244,6 @@ export default function ProductDetail() {
       </div>
     );
   }
-
 
   if (!product) {
     return (
@@ -370,41 +362,13 @@ export default function ProductDetail() {
             </h1>
 
             <div className="flex items-center gap-4 mb-4">
-              <p className="text-3xl font-bold text-green-600">
-                {product.price === 0 ? (
-                  <span className="text-xl text-gray-600">
-                    Contact for Price
-                  </span>
-                ) : (
-                  `$${product.price}`
-                )}
-              </p>
-
               {product.model && (
                 <Badge variant="outline" className="text-sm">
                   Model: {product.model}
                 </Badge>
               )}
             </div>
-
-            {product.weight && (
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Package className="w-4 h-4" />
-                <span>Weight: {product.weight}</span>
-              </div>
-            )}
           </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Package className="w-5 h-5 text-blue-600" />
-                Product Description
-              </CardTitle>
-            </CardHeader>
-            <CardContent>{renderDescription(product.description)}</CardContent>
-          </Card>
-
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Add to Cart</CardTitle>
@@ -461,9 +425,7 @@ export default function ProductDetail() {
               <div className="space-y-3">
                 <Button
                   onClick={handleAddToCart}
-                  disabled={
-                    isOutOfStock || isAddingToCart || product.price === 0
-                  }
+                  disabled={isOutOfStock || isAddingToCart}
                   className="w-full h-12 text-base"
                   size="lg"
                 >
@@ -475,11 +437,7 @@ export default function ProductDetail() {
                   ) : (
                     <>
                       <ShoppingCart className="w-5 h-5 mr-2" />
-                      {product.price === 0
-                        ? "Contact for Price"
-                        : `Add to Cart - $${(product.price * quantity).toFixed(
-                            2
-                          )}`}
+                      Add to Cart
                     </>
                   )}
                 </Button>
@@ -498,6 +456,15 @@ export default function ProductDetail() {
           </Card>
         </div>
       </div>
+      <Card style={{ marginTop: "1rem" }}>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Package className="w-5 h-5 text-blue-600" />
+            Product Description
+          </CardTitle>
+        </CardHeader>
+        <CardContent>{renderDescription(product.description)}</CardContent>
+      </Card>
     </div>
   );
 }

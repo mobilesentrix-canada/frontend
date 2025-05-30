@@ -46,9 +46,11 @@ export default function StoreProducts() {
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
+  // Add state to track which product is being added to cart
+  const [loadingProductId, setLoadingProductId] = useState<number | null>(null);
+
   const { toast } = useToast();
 
- 
   const { categories, isLoading: categoriesLoading } = useCategories();
   const { subCategories, isLoading: subCategoriesLoading } = useSubCategories(
     selectedCategoryId || 0
@@ -65,7 +67,7 @@ export default function StoreProducts() {
     categoryId: selectedSubCategoryId || selectedCategoryId || undefined,
   });
 
-  const { addToCart, count: cartCount, isAddingToCart } = useCart();
+  const { addToCart, count: cartCount } = useCart();
 
   const {
     addToWishlist,
@@ -76,6 +78,9 @@ export default function StoreProducts() {
   } = useWishlist();
 
   const handleAddToCart = (product: Product) => {
+    // Set loading state for this specific product
+    setLoadingProductId(product.id);
+
     addToCart(
       {
         product_id: product.id,
@@ -87,6 +92,8 @@ export default function StoreProducts() {
             title: "Added to cart",
             description: `${product.name} has been added to your cart`,
           });
+          // Clear loading state
+          setLoadingProductId(null);
         },
         onError: (error: any) => {
           toast({
@@ -94,6 +101,8 @@ export default function StoreProducts() {
             description: error.message || "Failed to add product to cart",
             variant: "destructive",
           });
+          // Clear loading state
+          setLoadingProductId(null);
         },
       }
     );
@@ -144,27 +153,22 @@ export default function StoreProducts() {
     const numCategoryId = parseInt(categoryId);
 
     if (selectedCategoryId === numCategoryId) {
- 
       setSelectedCategoryId(null);
       setSelectedSubCategoryId(null);
       setExpandedCategory(null);
     } else {
-   
       setSelectedCategoryId(numCategoryId);
       setSelectedSubCategoryId(null);
       setExpandedCategory(categoryId);
     }
 
     setCurrentPage(1);
-
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleSubCategoryClick = (subCategoryId: number) => {
     setSelectedSubCategoryId(subCategoryId);
-  
     setCurrentPage(1);
-
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -173,7 +177,6 @@ export default function StoreProducts() {
     setSelectedSubCategoryId(null);
     setExpandedCategory(null);
     setCurrentPage(1);
-  
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -199,40 +202,33 @@ export default function StoreProducts() {
   };
 
   const handlePageChange = (page: number) => {
-   
     if (pagination && (page < 1 || page > pagination.pages)) {
       return;
     }
 
     setCurrentPage(page);
-
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
- 
   const generatePaginationNumbers = () => {
     if (!pagination || pagination.pages <= 1) return [];
 
     const totalPages = pagination.pages;
     const current = currentPage;
-    const delta = 2; 
+    const delta = 2;
 
     let pages: (number | string)[] = [];
 
     if (totalPages <= 7) {
-    
       pages = Array.from({ length: totalPages }, (_, i) => i + 1);
     } else {
-  
       if (current <= delta + 1) {
-  
         pages = [
           ...Array.from({ length: delta + 2 }, (_, i) => i + 1),
           "...",
           totalPages,
         ];
       } else if (current >= totalPages - delta) {
-      
         pages = [
           1,
           "...",
@@ -242,7 +238,6 @@ export default function StoreProducts() {
           ),
         ];
       } else {
-     
         pages = [
           1,
           "...",
@@ -276,7 +271,6 @@ export default function StoreProducts() {
 
   return (
     <div className="px-4 py-6">
-     
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Products</h1>
@@ -302,7 +296,6 @@ export default function StoreProducts() {
         </Link>
       </div>
 
-      
       <Card className="mb-6">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -431,7 +424,6 @@ export default function StoreProducts() {
         </CardContent>
       </Card>
 
-   
       {productsLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
           {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
@@ -459,142 +451,146 @@ export default function StoreProducts() {
       ) : products.length > 0 ? (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
-            {products.map((product) => (
-              <Card
-                key={product.id}
-                className="hover:shadow-lg transition-all duration-300 overflow-hidden group"
-              >
-                <div className="aspect-square relative overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
-                  {product.image ? (
-                    <img
-                      src={product.image}
-                      alt={product.name}
-                      style={{ objectFit: "contain" }}
-                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                      onError={(e) => {
-                      
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = "none";
-                        const fallback =
-                          target.nextElementSibling as HTMLElement;
-                        if (fallback) {
-                          fallback.style.display = "flex";
-                        }
-                      }}
-                    />
-                  ) : null}
+            {products.map((product) => {
+              // Check if this specific product is loading
+              const isThisProductLoading = loadingProductId === product.id;
 
-                  <div
-                    className={`w-full h-full flex items-center justify-center ${
-                      product.image ? "hidden" : "flex"
-                    }`}
-                    style={{ display: product.image ? "none" : "flex" }}
-                  >
-                    <div className="text-center p-4">
-                      <div className="w-20 h-20 mx-auto mb-3 bg-white rounded-full flex items-center justify-center shadow-sm">
-                        <Grid3X3 className="w-10 h-10 text-gray-400" />
+              return (
+                <Card
+                  key={product.id}
+                  className="hover:shadow-lg transition-all duration-300 overflow-hidden group"
+                >
+                  <div className="aspect-square relative overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
+                    {product.image ? (
+                      <img
+                        src={product.image}
+                        alt={product.name}
+                        style={{ objectFit: "contain" }}
+                        className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = "none";
+                          const fallback =
+                            target.nextElementSibling as HTMLElement;
+                          if (fallback) {
+                            fallback.style.display = "flex";
+                          }
+                        }}
+                      />
+                    ) : null}
+
+                    <div
+                      className={`w-full h-full flex items-center justify-center ${
+                        product.image ? "hidden" : "flex"
+                      }`}
+                      style={{ display: product.image ? "none" : "flex" }}
+                    >
+                      <div className="text-center p-4">
+                        <div className="w-20 h-20 mx-auto mb-3 bg-white rounded-full flex items-center justify-center shadow-sm">
+                          <Grid3X3 className="w-10 h-10 text-gray-400" />
+                        </div>
+                        <p className="text-xs text-gray-500 font-medium">
+                          {product.manufacturer}
+                        </p>
+                        <p className="text-xs text-gray-400">{product.model}</p>
                       </div>
-                      <p className="text-xs text-gray-500 font-medium">
-                        {product.manufacturer}
-                      </p>
-                      <p className="text-xs text-gray-400">{product.model}</p>
                     </div>
-                  </div>
 
-                
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={cn(
-                      "absolute top-3 left-3 h-9 w-9 p-0 rounded-full bg-white/95 hover:bg-white shadow-sm",
-                      "transition-all duration-200 hover:scale-110",
-                      isInWishlist(product.id) && "text-red-500 bg-red-50"
-                    )}
-                    onClick={() => handleWishlistToggle(product)}
-                    disabled={isAddingToWishlist || isRemovingFromWishlist}
-                  >
-                    <Heart
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       className={cn(
-                        "w-4 h-4 transition-all",
-                        isInWishlist(product.id) && "fill-current scale-110"
+                        "absolute top-3 left-3 h-9 w-9 p-0 rounded-full bg-white/95 hover:bg-white shadow-sm",
+                        "transition-all duration-200 hover:scale-110",
+                        isInWishlist(product.id) && "text-red-500 bg-red-50"
                       )}
-                    />
-                  </Button>
-                  {product?.manufacturer && (
-                    <Badge className="absolute top-3 right-3 bg-white text-gray-900 shadow-sm">
-                      {product.manufacturer}
-                    </Badge>
-                  )}
-                  {product?.badges?.length > 0 && (
-                    <div className="absolute bottom-3 left-3 flex flex-wrap gap-1">
-                      {product.badges?.map((badge, index) => (
-                        <Badge
-                          key={index}
-                          className="bg-blue-500 text-white shadow-sm text-xs"
-                        >
-                          {badge}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg leading-tight line-clamp-2">
-                    {product.name}
-                  </CardTitle>
-
-                  {product.sku && (
-                    <div className="flex gap-1 flex-wrap">
-                      <Badge variant="outline" className="text-xs">
-                        SKU: {product.sku}
-                      </Badge>
-                      {product.model && (
-                        <Badge variant="outline" className="text-xs">
-                          {product.model}
-                        </Badge>
-                      )}
-                    </div>
-                  )}
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-end">
-                    <div></div>
-                    <div className="flex gap-2">
-                      <Link to={`/store/product/${product.id}`}>
-                        <Button variant="outline" size="sm">
-                          View
-                        </Button>
-                      </Link>
-                      <Button
-                        size="sm"
-                        onClick={() => handleAddToCart(product)}
-                        disabled={product.status === 0 || isAddingToCart}
-                        className="flex items-center gap-1"
-                      >
-                        {isAddingToCart ? (
-                          <>
-                            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                            Adding...
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="w-3 h-3" />
-                            Add to Cart
-                          </>
+                      onClick={() => handleWishlistToggle(product)}
+                      disabled={isAddingToWishlist || isRemovingFromWishlist}
+                    >
+                      <Heart
+                        className={cn(
+                          "w-4 h-4 transition-all",
+                          isInWishlist(product.id) && "fill-current scale-110"
                         )}
-                      </Button>
-                    </div>
+                      />
+                    </Button>
+                    {product?.manufacturer && (
+                      <Badge className="absolute top-3 right-3 bg-white text-gray-900 shadow-sm">
+                        {product.manufacturer}
+                      </Badge>
+                    )}
+                    {product?.badges?.length > 0 && (
+                      <div className="absolute bottom-3 left-3 flex flex-wrap gap-1">
+                        {product.badges?.map((badge, index) => (
+                          <Badge
+                            key={index}
+                            className="bg-blue-500 text-white shadow-sm text-xs"
+                          >
+                            {badge}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg leading-tight line-clamp-2">
+                      {product.name}
+                    </CardTitle>
+
+                    {product.sku && (
+                      <div className="flex gap-1 flex-wrap">
+                        <Badge variant="outline" className="text-xs">
+                          SKU: {product.sku}
+                        </Badge>
+                        {product.model && (
+                          <Badge variant="outline" className="text-xs">
+                            {product.model}
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex justify-between items-end">
+                      <div></div>
+                      <div className="flex gap-2">
+                        <Link to={`/store/product/${product.id}`}>
+                          <Button variant="outline" size="sm">
+                            View
+                          </Button>
+                        </Link>
+                        <Button
+                          size="sm"
+                          onClick={() => handleAddToCart(product)}
+                          disabled={
+                            product.status === 0 || isThisProductLoading
+                          }
+                          className="flex items-center gap-1"
+                        >
+                          {isThisProductLoading ? (
+                            <>
+                              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              Adding...
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="w-3 h-3" />
+                              Add to Cart
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
 
           {pagination && pagination.pages > 1 && (
             <Card className="mt-8">
               <CardContent className="p-4">
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-               
                   <div className="text-sm text-gray-600">
                     Page {currentPage} of {pagination.pages}
                     {pagination.total && (
@@ -604,9 +600,7 @@ export default function StoreProducts() {
                     )}
                   </div>
 
-                
                   <div className="flex items-center gap-2">
-                  
                     <Button
                       variant="outline"
                       size="sm"
@@ -618,7 +612,6 @@ export default function StoreProducts() {
                       Previous
                     </Button>
 
-                  
                     <div className="flex gap-1">
                       {generatePaginationNumbers().map((page, index) => {
                         if (page === "...") {
@@ -649,7 +642,6 @@ export default function StoreProducts() {
                       })}
                     </div>
 
-                   
                     <Button
                       variant="outline"
                       size="sm"

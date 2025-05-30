@@ -13,7 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
 export default function StoreProfile() {
-  const { user, updatePassword } = useAuth();
+  const { user, updatePassword, logout } = useAuth();
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -71,6 +71,7 @@ export default function StoreProfile() {
         setOldPassword("");
         setNewPassword("");
         setConfirmPassword("");
+        logout();
       } else {
         toast({
           title: "Error",

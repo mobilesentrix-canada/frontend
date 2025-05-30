@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -18,9 +18,15 @@ import {
   AlertCircle,
   CheckCircle,
 } from "lucide-react";
+import { useLocation } from "react-router-dom";
 
 export default function AdminDashboard() {
-  const { stores, members, orders, isLoading, error, stats } = useDashboard();
+  const location = useLocation();
+  const { stores, members, orders, isLoading, error, stats, refetch } =
+    useDashboard();
+  useEffect(() => {
+    refetch();
+  }, [location.pathname]);
 
   if (isLoading) {
     return <Loading text="Loading dashboard..." className="p-8" />;
@@ -186,7 +192,8 @@ export default function AdminDashboard() {
                               : "bg-red-100 text-red-800"
                           }`}
                         >
-                          {order?.status}
+                          {order?.status?.charAt(0).toUpperCase() +
+                            order?.status?.slice(1)}
                         </span>
                       </div>
                     </div>

@@ -1,4 +1,3 @@
-
 import { useApiQuery } from "./useApi";
 
 interface DashboardApiResponse {
@@ -26,23 +25,25 @@ interface DashboardApiResponse {
 }
 
 export const useDashboard = () => {
-  const { data, isLoading, error } = useApiQuery<DashboardApiResponse>({
-    queryKey: ["adminDashboard"],
-    queryFn: async () => {
-      const token = localStorage.getItem("accessToken");
-      const apiUrl = import.meta.env.VITE_API_URL;
-      const response = await fetch(`${apiUrl}/admin/dashboard`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const result = await response.json();
-      if (!response.ok || !result.success)
-        throw new Error("Failed to fetch dashboard");
-      return result.data;
-    },
-    staleTime: 2 * 60 * 1000,
-  });
+  const { data, isLoading, error, refetch } = useApiQuery<DashboardApiResponse>(
+    {
+      queryKey: ["adminDashboard"],
+      queryFn: async () => {
+        const token = localStorage.getItem("accessToken");
+        const apiUrl = import.meta.env.VITE_API_URL;
+        const response = await fetch(`${apiUrl}/admin/dashboard`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success)
+          throw new Error("Failed to fetch dashboard");
+        return result.data;
+      },
+      staleTime: 2 * 60 * 1000,
+    }
+  );
 
   const stores =
     data?.storePerformance.map((s) => ({
@@ -56,6 +57,7 @@ export const useDashboard = () => {
 
   return {
     stores,
+    refetch,
     members,
     orders,
     stats: data?.stats,

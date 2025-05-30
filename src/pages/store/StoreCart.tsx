@@ -125,7 +125,6 @@ export default function StoreCart() {
     }
   };
 
-
   if (isLoading) {
     return (
       <div className="px-4 py-6">
@@ -184,7 +183,6 @@ export default function StoreCart() {
     );
   }
 
-
   if (error) {
     return (
       <div className="px-4 py-6">
@@ -213,7 +211,6 @@ export default function StoreCart() {
       </div>
     );
   }
-
 
   if (cartItems.length === 0) {
     return (
