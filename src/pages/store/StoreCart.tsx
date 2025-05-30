@@ -381,18 +381,6 @@ export default function StoreCart() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {cartItems.map((item) => (
-                  <div key={item.id} className="flex justify-between text-sm">
-                    <span className="truncate pr-2">
-                      {item.product.name} × {item.quantity}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <hr className="border-gray-200" />
-
               <div className="space-y-3 pt-4">
                 <Button
                   onClick={handleCheckout}

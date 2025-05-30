@@ -47,7 +47,6 @@ import {
 } from "lucide-react";
 
 export default function AdminStores() {
-
   const [currentPage, setCurrentPage] = useState(1);
   const [pageLimit, setPageLimit] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
@@ -71,10 +70,8 @@ export default function AdminStores() {
     searchTerm: debouncedSearchTerm,
   });
 
-
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingStore, setEditingStore] = useState<Store | null>(null);
-
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [storeToDelete, setStoreToDelete] = useState<Store | null>(null);
@@ -86,11 +83,10 @@ export default function AdminStores() {
     is_active: true,
   });
 
-
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
-      setCurrentPage(1); 
+      setCurrentPage(1);
     }, 500);
 
     return () => clearTimeout(timer);
@@ -189,11 +185,9 @@ export default function AdminStores() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Store</h1>
           <p className="text-gray-600 mt-2">
-            Manage your retail network
+            Total Number of Stores:
             {pagination && (
-              <span className="ml-2 text-sm">
-                ({pagination.total} total stores)
-              </span>
+              <span className="ml-1 text-sm">{pagination.total}</span>
             )}
           </p>
         </div>
@@ -317,7 +311,6 @@ export default function AdminStores() {
         </Alert>
       )}
 
-
       <div className="mb-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -419,12 +412,6 @@ export default function AdminStores() {
                     {store.member_count ?? 0}
                   </span>
                 </div>
-
-                {store.admin_name && (
-                  <div className="text-xs text-gray-500">
-                    Admin: {store.admin_name}
-                  </div>
-                )}
 
                 <div className="text-xs text-gray-400">
                   Created: {new Date(store.created_at).toLocaleDateString()}

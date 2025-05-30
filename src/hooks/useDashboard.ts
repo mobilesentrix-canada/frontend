@@ -15,6 +15,7 @@ interface DashboardApiResponse {
     product_names: Array<string>;
     storeName: string;
     total: number;
+    items_count: any;
     status: "pending" | "approved" | "rejected";
   }[];
   storePerformance: {

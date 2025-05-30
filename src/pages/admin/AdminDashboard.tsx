@@ -163,11 +163,14 @@ export default function AdminDashboard() {
                       {order?.store_name?.charAt(0).toUpperCase()}
                     </div>
                     <div>
-                      <p className="font-semibold text-gray-900">
+                      {/* <p className="font-semibold text-gray-900">
                         {order?.product_names[0]}
+                      </p> */}
+                      <p className="font-semibold text-gray-900">
+                        {order?.store_name} ({order?.items_count} Product)
                       </p>
                       <p className="text-sm text-gray-600">
-                        {order?.storeName}
+                        {order?.user_name}
                       </p>
                     </div>
                   </div>
@@ -211,7 +214,9 @@ export default function AdminDashboard() {
                 <StoreIcon className="w-5 h-5 text-white" />
               </div>
               <div>
-                <CardTitle className="text-xl font-semibold">Store</CardTitle>
+                <CardTitle className="text-xl font-semibold">
+                  Latest Store
+                </CardTitle>
                 <CardDescription>Member distribution</CardDescription>
               </div>
             </div>

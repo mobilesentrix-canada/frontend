@@ -258,11 +258,9 @@ export default function AdminMembers() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Team Members</h1>
           <p className="text-gray-600 mt-2">
-            Manage your store team
+            Total Members across all stores :
             {pagination && (
-              <span className="ml-2 text-sm">
-                ({pagination.total} total members)
-              </span>
+              <span className="ml-1 text-sm">{pagination.total}</span>
             )}
           </p>
         </div>
@@ -462,13 +460,13 @@ export default function AdminMembers() {
             <CardHeader className="pb-3">
               <div className="flex justify-between items-start">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-black rounded-full flex items-center justify-center text-white font-bold text-lg">
+                  <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center text-white font-bold text-lg">
                     {member.name.charAt(0).toUpperCase()}
                   </div>
                   <div>
                     <CardTitle className="text-lg flex items-center gap-2">
-                      {member.name && member.name.length > 10
-                        ? member.name.substring(0, 10) + ".."
+                      {member.name && member.name.length > 30
+                        ? member.name.substring(0, 30) + ".."
                         : member.name}
                       {!member.is_active && (
                         <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">
@@ -476,14 +474,38 @@ export default function AdminMembers() {
                         </span>
                       )}
                     </CardTitle>
-                    <CardDescription className="text-sm">
-                      {member.email && member.email.length > 10
-                        ? member.email.substring(0, 10) + "..."
+                    <CardDescription className="text-sm rounded-full">
+                      {member.email && member.email.length > 35
+                        ? member.email.substring(0, 35) + "..."
                         : member.email}
                     </CardDescription>
                   </div>
                 </div>
-                <div className="flex gap-1">
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-700">
+                      Store:
+                    </span>
+                  </div>
+                  <span
+                    className={`text-sm px-2 py-1 rounded-full ${
+                      member.store_name
+                        ? "bg-blue-100 text-blue-800"
+                        : "bg-gray-100 text-gray-600"
+                    }`}
+                  >
+                    {member.store_name || "Not Assigned"}
+                  </span>
+                </div>
+
+                <div className="text-xs text-gray-400">
+                  Joined: {formatDate(member.created_at)}
+                </div>
+                <div className="flex justify-center gap-2">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -512,39 +534,6 @@ export default function AdminMembers() {
                   >
                     <Trash2 className="w-4 h-4" />
                   </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-700">
-                      Store:
-                    </span>
-                  </div>
-                  <span
-                    className={`text-sm px-2 py-1 rounded-full ${
-                      member.store_name
-                        ? "bg-blue-100 text-blue-800"
-                        : "bg-gray-100 text-gray-600"
-                    }`}
-                  >
-                    {member.store_name || "Not Assigned"}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">
-                    Role:
-                  </span>
-                  <span className="text-sm bg-purple-100 text-purple-800 px-2 py-1 rounded-full capitalize">
-                    {member.role}
-                  </span>
-                </div>
-
-                <div className="text-xs text-gray-400">
-                  Joined: {formatDate(member.created_at)}
                 </div>
               </div>
             </CardContent>
