@@ -121,6 +121,7 @@ export default function AdminMembers() {
         await updateMember(editingMember.id, {
           name: formData.name,
           is_active: true,
+          role: "user",
         });
       } else {
         const memberData = {
@@ -199,7 +200,7 @@ export default function AdminMembers() {
       email: member.email,
       store_id: member.store_id ? member.store_id.toString() : "none",
       password: "",
-      role: member.role,
+      role: member.role || "user",
     });
     setIsAddDialogOpen(true);
   };
