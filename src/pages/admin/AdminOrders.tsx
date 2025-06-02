@@ -39,7 +39,6 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Loading, LoadingSpinner } from "@/components/ui/loading";
 import { Check, X, Search, Filter, RefreshCw, AlertCircle } from "lucide-react";
 
-
 const StatusBadge = React.memo(({ status }: { status: string }) => {
   switch (status) {
     case "pending":
@@ -77,7 +76,6 @@ const StatusBadge = React.memo(({ status }: { status: string }) => {
       );
   }
 });
-
 
 const SearchAndFilter = React.memo(
   ({
@@ -130,7 +128,6 @@ const SearchAndFilter = React.memo(
   )
 );
 
-
 const MobileOrderCard = React.memo(
   ({
     order,
@@ -176,6 +173,7 @@ const MobileOrderCard = React.memo(
             )}
           </div>
 
+          {/* Modified action buttons logic */}
           {order.status === "pending" && (
             <div className="flex gap-2 pt-2">
               <Button
@@ -199,12 +197,40 @@ const MobileOrderCard = React.memo(
               </Button>
             </div>
           )}
+
+          {order.status === "approved" && (
+            <div className="flex gap-2 pt-2">
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => onReject(order.id)}
+                className="flex-1 text-xs"
+                disabled={isApprovingOrder || isRejectingOrder}
+              >
+                <X className="w-3 h-3 mr-1" />
+                Reject Order
+              </Button>
+            </div>
+          )}
+
+          {order.status === "rejected" && (
+            <div className="flex gap-2 pt-2">
+              <Button
+                size="sm"
+                onClick={() => onApprove(order.id)}
+                className="bg-green-600 hover:bg-green-700 text-white flex-1 text-xs"
+                disabled={isApprovingOrder || isRejectingOrder}
+              >
+                <Check className="w-3 h-3 mr-1" />
+                Accept Order
+              </Button>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
   )
 );
-
 
 const DesktopOrderRow = React.memo(
   ({
@@ -253,6 +279,7 @@ const DesktopOrderRow = React.memo(
         {formatDate(order.created_at)}
       </TableCell>
       <TableCell>
+        {/* Modified action buttons logic */}
         {order.status === "pending" ? (
           <div className="flex gap-1">
             <Button
@@ -273,6 +300,29 @@ const DesktopOrderRow = React.memo(
               <X className="w-3 h-3" />
             </Button>
           </div>
+        ) : order.status === "approved" ? (
+          <div className="flex gap-1">
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => onReject(order.id)}
+              className="text-xs px-2 py-1"
+              disabled={isApprovingOrder || isRejectingOrder}
+            >
+              <X className="w-3 h-3" />
+            </Button>
+          </div>
+        ) : order.status === "rejected" ? (
+          <div className="flex gap-1">
+            <Button
+              size="sm"
+              onClick={() => onApprove(order.id)}
+              className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1"
+              disabled={isApprovingOrder || isRejectingOrder}
+            >
+              <Check className="w-3 h-3" />
+            </Button>
+          </div>
         ) : (
           <span className="text-gray-500 text-xs">No actions</span>
         )}
@@ -289,7 +339,6 @@ function AdminOrdersContent() {
 
   const itemsPerPage = 10;
 
- 
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
@@ -322,7 +371,6 @@ function AdminOrdersContent() {
     isRejectingOrder,
   } = useOrders(apiParams);
 
-
   const formatDate = useCallback((dateString: string) => {
     try {
       return new Date(dateString).toLocaleDateString("en-US", {
@@ -339,7 +387,6 @@ function AdminOrdersContent() {
     const numAmount = typeof amount === "string" ? parseFloat(amount) : amount;
     return isNaN(numAmount) ? "$0.00" : `$${numAmount.toFixed(2)}`;
   }, []);
-
 
   const handleApprove = useCallback(
     async (orderId: number) => {
@@ -371,7 +418,6 @@ function AdminOrdersContent() {
     setStatusFilter(status);
     setCurrentPage(1);
   }, []);
-
 
   const displayData = useMemo(() => {
     const baseOrders = pagination ? orders : filteredOrders;
@@ -468,14 +514,12 @@ function AdminOrdersContent() {
         onStatusFilterChange={handleStatusFilterChange}
       />
 
-
       {isSearching && (
         <div className="flex items-center gap-2 text-sm text-gray-500">
           <LoadingSpinner size="sm" />
           Searching...
         </div>
       )}
-
 
       <Card>
         <CardHeader className="pb-4">
@@ -507,7 +551,6 @@ function AdminOrdersContent() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-
           <div className="block md:hidden">
             {displayData.orders.length === 0 ? (
               <div className="text-center py-8 px-4">
@@ -539,14 +582,13 @@ function AdminOrdersContent() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs">Order #</TableHead>
-                  <TableHead className="text-xs">Member</TableHead>
-                  <TableHead className="text-xs">Store</TableHead>
-                  <TableHead className="text-xs">Items</TableHead>
-
-                  <TableHead className="text-xs">Status</TableHead>
-                  <TableHead className="text-xs">Date</TableHead>
-                  <TableHead className="text-xs">Actions</TableHead>
+                  <TableHead className="text-xs w-20">Order #</TableHead>
+                  <TableHead className="text-xs w-32">Member</TableHead>
+                  <TableHead className="text-xs w-28">Store</TableHead>
+                  <TableHead className="text-xs w-40">Items</TableHead>
+                  <TableHead className="text-xs w-24">Status</TableHead>
+                  <TableHead className="text-xs w-28">Date</TableHead>
+                  <TableHead className="text-xs w-32">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -577,7 +619,6 @@ function AdminOrdersContent() {
           </div>
         </CardContent>
 
-   
         {displayData.totalPages > 1 && (
           <div className="p-4 border-t">
             <Pagination>
