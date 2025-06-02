@@ -46,9 +46,6 @@ export default function StoreProducts() {
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
-  // Add state to track which product is being added to cart
-  const [loadingProductId, setLoadingProductId] = useState<number | null>(null);
-
   const { toast } = useToast();
 
   const { categories, isLoading: categoriesLoading } = useCategories();
@@ -67,7 +64,7 @@ export default function StoreProducts() {
     categoryId: selectedSubCategoryId || selectedCategoryId || undefined,
   });
 
-  const { addToCart, count: cartCount } = useCart();
+  const { addToCart, count: cartCount, isAddingToCart } = useCart();
 
   const {
     addToWishlist,
@@ -78,9 +75,6 @@ export default function StoreProducts() {
   } = useWishlist();
 
   const handleAddToCart = (product: Product) => {
-    // Set loading state for this specific product
-    setLoadingProductId(product.id);
-
     addToCart(
       {
         product_id: product.id,
@@ -92,8 +86,6 @@ export default function StoreProducts() {
             title: "Added to cart",
             description: `${product.name} has been added to your cart`,
           });
-          // Clear loading state
-          setLoadingProductId(null);
         },
         onError: (error: any) => {
           toast({
@@ -101,8 +93,6 @@ export default function StoreProducts() {
             description: error.message || "Failed to add product to cart",
             variant: "destructive",
           });
-          // Clear loading state
-          setLoadingProductId(null);
         },
       }
     );
@@ -163,12 +153,15 @@ export default function StoreProducts() {
     }
 
     setCurrentPage(1);
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleSubCategoryClick = (subCategoryId: number) => {
     setSelectedSubCategoryId(subCategoryId);
+
     setCurrentPage(1);
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -177,6 +170,7 @@ export default function StoreProducts() {
     setSelectedSubCategoryId(null);
     setExpandedCategory(null);
     setCurrentPage(1);
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -207,6 +201,7 @@ export default function StoreProducts() {
     }
 
     setCurrentPage(page);
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -451,140 +446,128 @@ export default function StoreProducts() {
       ) : products.length > 0 ? (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
-            {products.map((product) => {
-              // Check if this specific product is loading
-              const isThisProductLoading = loadingProductId === product.id;
+            {products.map((product) => (
+              <Card
+                key={product.id}
+                className="hover:shadow-lg transition-all duration-300 overflow-hidden group"
+              >
+                <div className="aspect-square relative overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
+                  {product.image ? (
+                    <img
+                      src={product.image}
+                      alt={product.name}
+                      style={{ objectFit: "contain" }}
+                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = "none";
+                        const fallback =
+                          target.nextElementSibling as HTMLElement;
+                        if (fallback) {
+                          fallback.style.display = "flex";
+                        }
+                      }}
+                    />
+                  ) : null}
 
-              return (
-                <Card
-                  key={product.id}
-                  className="hover:shadow-lg transition-all duration-300 overflow-hidden group"
-                >
-                  <div className="aspect-square relative overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
-                    {product.image ? (
-                      <img
-                        src={product.image}
-                        alt={product.name}
-                        style={{ objectFit: "contain" }}
-                        className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          target.style.display = "none";
-                          const fallback =
-                            target.nextElementSibling as HTMLElement;
-                          if (fallback) {
-                            fallback.style.display = "flex";
-                          }
-                        }}
-                      />
-                    ) : null}
-
-                    <div
-                      className={`w-full h-full flex items-center justify-center ${
-                        product.image ? "hidden" : "flex"
-                      }`}
-                      style={{ display: product.image ? "none" : "flex" }}
-                    >
-                      <div className="text-center p-4">
-                        <div className="w-20 h-20 mx-auto mb-3 bg-white rounded-full flex items-center justify-center shadow-sm">
-                          <Grid3X3 className="w-10 h-10 text-gray-400" />
-                        </div>
-                        <p className="text-xs text-gray-500 font-medium">
-                          {product.manufacturer}
-                        </p>
-                        <p className="text-xs text-gray-400">{product.model}</p>
+                  <div
+                    className={`w-full h-full flex items-center justify-center ${
+                      product.image ? "hidden" : "flex"
+                    }`}
+                    style={{ display: product.image ? "none" : "flex" }}
+                  >
+                    <div className="text-center p-4">
+                      <div className="w-20 h-20 mx-auto mb-3 bg-white rounded-full flex items-center justify-center shadow-sm">
+                        <Grid3X3 className="w-10 h-10 text-gray-400" />
                       </div>
-                    </div>
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={cn(
-                        "absolute top-3 left-3 h-9 w-9 p-0 rounded-full bg-white/95 hover:bg-white shadow-sm",
-                        "transition-all duration-200 hover:scale-110",
-                        isInWishlist(product.id) && "text-red-500 bg-red-50"
-                      )}
-                      onClick={() => handleWishlistToggle(product)}
-                      disabled={isAddingToWishlist || isRemovingFromWishlist}
-                    >
-                      <Heart
-                        className={cn(
-                          "w-4 h-4 transition-all",
-                          isInWishlist(product.id) && "fill-current scale-110"
-                        )}
-                      />
-                    </Button>
-                    {product?.manufacturer && (
-                      <Badge className="absolute top-3 right-3 bg-white text-gray-900 shadow-sm">
+                      <p className="text-xs text-gray-500 font-medium">
                         {product.manufacturer}
-                      </Badge>
-                    )}
-                    {product?.badges?.length > 0 && (
-                      <div className="absolute bottom-3 left-3 flex flex-wrap gap-1">
-                        {product.badges?.map((badge, index) => (
-                          <Badge
-                            key={index}
-                            className="bg-blue-500 text-white shadow-sm text-xs"
-                          >
-                            {badge}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-lg leading-tight line-clamp-2">
-                      {product.name}
-                    </CardTitle>
-
-                    {product.sku && (
-                      <div className="flex gap-1 flex-wrap">
-                        <Badge variant="outline" className="text-xs">
-                          SKU: {product.sku}
-                        </Badge>
-                        {product.model && (
-                          <Badge variant="outline" className="text-xs">
-                            {product.model}
-                          </Badge>
-                        )}
-                      </div>
-                    )}
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex justify-between items-end">
-                      <div></div>
-                      <div className="flex gap-2">
-                        <Link to={`/store/product/${product.id}`}>
-                          <Button variant="outline" size="sm">
-                            View
-                          </Button>
-                        </Link>
-                        <Button
-                          size="sm"
-                          onClick={() => handleAddToCart(product)}
-                          disabled={
-                            product.status === 0 || isThisProductLoading
-                          }
-                          className="flex items-center gap-1"
-                        >
-                          {isThisProductLoading ? (
-                            <>
-                              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                              Adding...
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="w-3 h-3" />
-                              Add to Cart
-                            </>
-                          )}
-                        </Button>
-                      </div>
+                      </p>
+                      <p className="text-xs text-gray-400">{product.model}</p>
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                  </div>
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      "absolute top-3 left-3 h-9 w-9 p-0 rounded-full bg-white/95 hover:bg-white shadow-sm",
+                      "transition-all duration-200 hover:scale-110",
+                      isInWishlist(product.id) && "text-red-500 bg-red-50"
+                    )}
+                    onClick={() => handleWishlistToggle(product)}
+                    disabled={isAddingToWishlist || isRemovingFromWishlist}
+                  >
+                    <Heart
+                      className={cn(
+                        "w-4 h-4 transition-all",
+                        isInWishlist(product.id) && "fill-current scale-110"
+                      )}
+                    />
+                  </Button>
+                  {product?.manufacturer && (
+                    <Badge className="absolute top-3 right-3 bg-white text-gray-900 shadow-sm">
+                      {product.manufacturer}
+                    </Badge>
+                  )}
+                  {product?.badges && (
+                    <div className="absolute bottom-3 left-3 flex flex-wrap gap-1">
+                      <Badge className="bg-blue-500 text-white shadow-sm text-xs">
+                        {product.badges}
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg leading-tight line-clamp-2">
+                    {product.name}
+                  </CardTitle>
+
+                  {product.sku && (
+                    <div className="flex gap-1 flex-wrap">
+                      <Badge variant="outline" className="text-xs">
+                        SKU: {product.sku}
+                      </Badge>
+                      {product.model && (
+                        <Badge variant="outline" className="text-xs">
+                          {product.model}
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  <div className="flex justify-between items-end">
+                    <div></div>
+                    <div className="flex gap-2">
+                      <Link to={`/store/product/${product.id}`}>
+                        <Button variant="outline" size="sm">
+                          View
+                        </Button>
+                      </Link>
+                      <Button
+                        size="sm"
+                        onClick={() => handleAddToCart(product)}
+                        disabled={product.status === 0 || isAddingToCart}
+                        className="flex items-center gap-1"
+                      >
+                        {isAddingToCart ? (
+                          <>
+                            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            Adding...
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-3 h-3" />
+                            Add to Cart
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
 
           {pagination && pagination.pages > 1 && (
