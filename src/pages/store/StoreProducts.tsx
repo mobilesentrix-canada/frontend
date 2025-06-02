@@ -46,6 +46,11 @@ export default function StoreProducts() {
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
+  // Track which specific product is being added to cart
+  const [addingToCartProductId, setAddingToCartProductId] = useState<
+    number | null
+  >(null);
+
   const { toast } = useToast();
 
   const { categories, isLoading: categoriesLoading } = useCategories();
@@ -64,7 +69,7 @@ export default function StoreProducts() {
     categoryId: selectedSubCategoryId || selectedCategoryId || undefined,
   });
 
-  const { addToCart, count: cartCount, isAddingToCart } = useCart();
+  const { addToCart, count: cartCount } = useCart();
 
   const {
     addToWishlist,
@@ -75,6 +80,9 @@ export default function StoreProducts() {
   } = useWishlist();
 
   const handleAddToCart = (product: Product) => {
+    // Set loading state for this specific product
+    setAddingToCartProductId(product.id);
+
     addToCart(
       {
         product_id: product.id,
@@ -82,12 +90,16 @@ export default function StoreProducts() {
       },
       {
         onSuccess: () => {
+          // Clear loading state
+          setAddingToCartProductId(null);
           toast({
             title: "Added to cart",
             description: `${product.name} has been added to your cart`,
           });
         },
         onError: (error: any) => {
+          // Clear loading state
+          setAddingToCartProductId(null);
           toast({
             title: "Error",
             description: error.message || "Failed to add product to cart",
@@ -247,6 +259,11 @@ export default function StoreProducts() {
     }
 
     return pages;
+  };
+
+  // Helper function to check if a specific product is being added to cart
+  const isProductBeingAdded = (productId: number) => {
+    return addingToCartProductId === productId;
   };
 
   if (productsError) {
@@ -548,10 +565,13 @@ export default function StoreProducts() {
                       <Button
                         size="sm"
                         onClick={() => handleAddToCart(product)}
-                        disabled={product.status === 0 || isAddingToCart}
+                        disabled={
+                          product.status === 0 ||
+                          isProductBeingAdded(product.id)
+                        }
                         className="flex items-center gap-1"
                       >
-                        {isAddingToCart ? (
+                        {isProductBeingAdded(product.id) ? (
                           <>
                             <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
                             Adding...
