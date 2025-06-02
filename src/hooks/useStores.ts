@@ -3,8 +3,13 @@ import { useApiQuery, useApiMutation } from "./useApi";
 export interface Store {
   id: number;
   name: string;
+  store_type: "owned" | "franchise";
   location: string;
   store_id: string;
+  status: "active" | "inactive" | "maintenance";
+  manager_name?: string;
+  phone_number?: string;
+  email_address?: string;
   admin_id: number;
   is_active: boolean;
   created_at: string;
@@ -27,31 +32,67 @@ interface UseStoresParams {
   page?: number;
   limit?: number;
   searchTerm?: string;
+  store_type?: string;
+  status?: string;
 }
-const apiUrl = import.meta.env.VITE_API_URL;
 
+export interface StoreFormData {
+  name: string;
+  store_type: "owned" | "franchise";
+  location: string;
+  manager_name?: string;
+  phone_number?: string;
+  email_address?: string;
+  status: "active" | "inactive" | "maintenance";
+  is_active?: boolean;
+  store_id?: any;
+}
+
+const apiUrl = import.meta.env.VITE_API_URL;
 const BASE_URL = `${apiUrl}/admin/stores`;
 
 export const useStores = (params: UseStoresParams = {}) => {
-  const { page = 1, limit = 10, searchTerm = "" } = params;
+  const {
+    page = 1,
+    limit = 10,
+    searchTerm = "",
+    store_type = "",
+    status = "",
+  } = params;
 
   const { data, isLoading, error, refetch } = useApiQuery<StoreApiResponse>({
-    queryKey: ["stores", page, limit, searchTerm],
+    queryKey: ["stores", page, limit, searchTerm, store_type, status],
     queryFn: async () => {
       const token = localStorage.getItem("accessToken");
-      const searchQuery = encodeURIComponent(searchTerm);
-      const res = await fetch(
-        `${BASE_URL}?page=${page}&limit=${limit}&search=${searchQuery}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+
+      // Build query parameters
+      const queryParams = new URLSearchParams();
+      queryParams.append("page", page.toString());
+      queryParams.append("limit", limit.toString());
+
+      if (searchTerm.trim()) {
+        queryParams.append("search", searchTerm.trim());
+      }
+
+      // Only add filters if they have actual values (not empty, not "all")
+      if (store_type && store_type !== "all" && store_type.trim() !== "") {
+        queryParams.append("store_type", store_type);
+      }
+
+      if (status && status !== "all" && status.trim() !== "") {
+        queryParams.append("status", status);
+      }
+
+      const res = await fetch(`${BASE_URL}?${queryParams.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
       const result = await res.json();
 
       if (!res.ok || !result.success) {
-        throw new Error("Failed to fetch stores");
+        throw new Error(result.message || "Failed to fetch stores");
       }
 
       return result.data;
@@ -63,9 +104,7 @@ export const useStores = (params: UseStoresParams = {}) => {
   const pagination = data?.pagination;
 
   const addStoreMutation = useApiMutation({
-    mutationFn: async (
-      storeData: Omit<Store, "id" | "admin_id" | "created_at" | "updated_at">
-    ) => {
+    mutationFn: async (storeData: StoreFormData) => {
       const token = localStorage.getItem("accessToken");
       const res = await fetch(BASE_URL, {
         method: "POST",
@@ -90,7 +129,13 @@ export const useStores = (params: UseStoresParams = {}) => {
   });
 
   const updateStoreMutation = useApiMutation({
-    mutationFn: async ({ id, data }: { id: number; data: Partial<Store> }) => {
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: number;
+      data: Partial<StoreFormData>;
+    }) => {
       const token = localStorage.getItem("accessToken");
       const res = await fetch(`${BASE_URL}/${id}`, {
         method: "PUT",
@@ -142,7 +187,7 @@ export const useStores = (params: UseStoresParams = {}) => {
     error,
     refetch,
     addStore: addStoreMutation.mutate,
-    updateStore: (id: number, data: Partial<Store>) =>
+    updateStore: (id: number, data: Partial<StoreFormData>) =>
       updateStoreMutation.mutate({ id, data }),
     deleteStore: deleteStoreMutation.mutate,
     isAddingStore: addStoreMutation.isPending,
