@@ -266,7 +266,7 @@ export default function AdminStores() {
 
               <div className="flex items-center gap-3">
                 <Button
-                  onClick={refetch}
+                  onClick={() => refetch()}
                   variant="outline"
                   disabled={isLoading}
                 >
