@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -18,10 +18,11 @@ import {
   AlertCircle,
   CheckCircle,
 } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 export default function AdminDashboard() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { stores, members, orders, isLoading, error, stats, refetch } =
     useDashboard();
   useEffect(() => {
@@ -84,6 +85,11 @@ export default function AdminDashboard() {
     },
   ];
 
+  const handleNavigation = (orderId) => {
+    if (orderId) {
+      navigate(`/admin/orders/${orderId}`);
+    }
+  };
   return (
     <div className="px-6 py-8 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 min-h-screen">
       <div className="mb-10">
@@ -153,10 +159,11 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {orders.slice(0, 6).map((order) => (
+              {orders.slice(0, 5).map((order) => (
                 <div
                   key={order?.id}
                   className="flex items-center justify-between p-4 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg border border-gray-200 hover:shadow-md transition-shadow"
+                  onClick={() => handleNavigation(order?.id)}
                 >
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
@@ -223,7 +230,7 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {stores.map((store, index) => (
+              {stores.slice(0, 5).map((store, index) => (
                 <div key={store.storeId} className="relative">
                   <div className="flex items-center justify-between p-4 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg border border-gray-200">
                     <div className="flex items-center gap-3">

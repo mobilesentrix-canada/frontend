@@ -8,7 +8,6 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdminLayout } from "@/components/AdminLayout";
 import { StoreLayout } from "@/components/StoreLayout";
 
-
 import Login from "@/pages/Login";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import AdminStores from "@/pages/admin/AdminStores";
@@ -21,6 +20,7 @@ import StoreOrders from "@/pages/store/StoreOrders";
 import StoreProfile from "@/pages/store/StoreProfile";
 import StoreWishlist from "@/pages/store/StoreWishlist";
 import NotFound from "@/pages/NotFound";
+import UserOrderDetails from "./pages/admin/OrderDetails";
 
 const queryClient = new QueryClient();
 
@@ -43,6 +43,7 @@ const App = () => (
               }
             >
               <Route index element={<AdminDashboard />} />
+
               <Route path="stores" element={<AdminStores />} />
               <Route path="members" element={<AdminMembers />} />
               <Route path="orders" element={<AdminOrders />} />
@@ -62,6 +63,14 @@ const App = () => (
               <Route path="profile" element={<StoreProfile />} />
               <Route path="wishlist" element={<StoreWishlist />} />
             </Route>
+            <Route
+              path="/admin/orders/:orderId"
+              element={
+                <ProtectedRoute>
+                  <UserOrderDetails />
+                </ProtectedRoute>
+              }
+            />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

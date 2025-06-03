@@ -38,6 +38,7 @@ import { OrdersTableSkeleton } from "@/components/OrdersTableSkeleton";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Loading, LoadingSpinner } from "@/components/ui/loading";
 import { Check, X, Search, Filter, RefreshCw, AlertCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const StatusBadge = React.memo(({ status }: { status: string }) => {
   switch (status) {
@@ -137,13 +138,19 @@ const MobileOrderCard = React.memo(
     isRejectingOrder,
     formatDate,
     formatCurrency,
+    onOrderClick,
   }: any) => (
-    <Card className="border border-gray-200">
+    <Card
+      className="border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
+      onClick={() => onOrderClick(order.id)}
+    >
       <CardContent className="p-4">
         <div className="space-y-3">
           <div className="flex justify-between items-start">
             <div>
-              <p className="font-medium text-sm">#{order.order_number}</p>
+              <p className="font-medium text-sm text-blue-600 hover:text-blue-800">
+                #{order.order_number}
+              </p>
               <p className="text-xs text-gray-500">
                 {formatDate(order.created_at)}
               </p>
@@ -173,12 +180,15 @@ const MobileOrderCard = React.memo(
             )}
           </div>
 
-          {/* Modified action buttons logic */}
+          {/* Action buttons with stopPropagation */}
           {order.status === "pending" && (
             <div className="flex gap-2 pt-2">
               <Button
                 size="sm"
-                onClick={() => onApprove(order.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onApprove(order.id);
+                }}
                 className="bg-green-600 hover:bg-green-700 text-white flex-1 text-xs"
                 disabled={isApprovingOrder || isRejectingOrder}
               >
@@ -188,7 +198,10 @@ const MobileOrderCard = React.memo(
               <Button
                 size="sm"
                 variant="destructive"
-                onClick={() => onReject(order.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onReject(order.id);
+                }}
                 className="flex-1 text-xs"
                 disabled={isApprovingOrder || isRejectingOrder}
               >
@@ -203,7 +216,10 @@ const MobileOrderCard = React.memo(
               <Button
                 size="sm"
                 variant="destructive"
-                onClick={() => onReject(order.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onReject(order.id);
+                }}
                 className="flex-1 text-xs"
                 disabled={isApprovingOrder || isRejectingOrder}
               >
@@ -217,7 +233,10 @@ const MobileOrderCard = React.memo(
             <div className="flex gap-2 pt-2">
               <Button
                 size="sm"
-                onClick={() => onApprove(order.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onApprove(order.id);
+                }}
                 className="bg-green-600 hover:bg-green-700 text-white flex-1 text-xs"
                 disabled={isApprovingOrder || isRejectingOrder}
               >
@@ -241,10 +260,16 @@ const DesktopOrderRow = React.memo(
     isRejectingOrder,
     formatDate,
     formatCurrency,
+    onOrderClick,
   }: any) => (
-    <TableRow className="hover:bg-gray-50">
+    <TableRow
+      className="hover:bg-gray-50 cursor-pointer"
+      onClick={() => onOrderClick(order.id)}
+    >
       <TableCell className="font-medium text-sm">
-        #{order.order_number}
+        <span className="text-blue-600 hover:text-blue-800">
+          #{order.order_number}
+        </span>
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-2">
@@ -279,12 +304,15 @@ const DesktopOrderRow = React.memo(
         {formatDate(order.created_at)}
       </TableCell>
       <TableCell>
-        {/* Modified action buttons logic */}
+        {/* Action buttons with stopPropagation */}
         {order.status === "pending" ? (
           <div className="flex gap-1">
             <Button
               size="sm"
-              onClick={() => onApprove(order.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onApprove(order.id);
+              }}
               className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1"
               disabled={isApprovingOrder || isRejectingOrder}
             >
@@ -293,7 +321,10 @@ const DesktopOrderRow = React.memo(
             <Button
               size="sm"
               variant="destructive"
-              onClick={() => onReject(order.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onReject(order.id);
+              }}
               className="text-xs px-2 py-1"
               disabled={isApprovingOrder || isRejectingOrder}
             >
@@ -305,7 +336,10 @@ const DesktopOrderRow = React.memo(
             <Button
               size="sm"
               variant="destructive"
-              onClick={() => onReject(order.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onReject(order.id);
+              }}
               className="text-xs px-2 py-1"
               disabled={isApprovingOrder || isRejectingOrder}
             >
@@ -316,7 +350,10 @@ const DesktopOrderRow = React.memo(
           <div className="flex gap-1">
             <Button
               size="sm"
-              onClick={() => onApprove(order.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onApprove(order.id);
+              }}
               className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1"
               disabled={isApprovingOrder || isRejectingOrder}
             >
@@ -332,6 +369,7 @@ const DesktopOrderRow = React.memo(
 );
 
 function AdminOrdersContent() {
+  const navigate = useNavigate(); // Move useNavigate inside the component
   const [currentPage, setCurrentPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
@@ -418,6 +456,13 @@ function AdminOrdersContent() {
     setStatusFilter(status);
     setCurrentPage(1);
   }, []);
+
+  const handleOrderClick = useCallback(
+    (orderId: number) => {
+      navigate(`/admin/orders/${orderId}`);
+    },
+    [navigate]
+  );
 
   const displayData = useMemo(() => {
     const baseOrders = pagination ? orders : filteredOrders;
@@ -572,6 +617,7 @@ function AdminOrdersContent() {
                     isRejectingOrder={isRejectingOrder}
                     formatDate={formatDate}
                     formatCurrency={formatCurrency}
+                    onOrderClick={handleOrderClick} // Add this prop
                   />
                 ))}
               </div>
@@ -602,6 +648,7 @@ function AdminOrdersContent() {
                     isRejectingOrder={isRejectingOrder}
                     formatDate={formatDate}
                     formatCurrency={formatCurrency}
+                    onOrderClick={handleOrderClick} // Add this prop
                   />
                 ))}
               </TableBody>

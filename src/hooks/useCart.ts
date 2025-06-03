@@ -1,7 +1,6 @@
 import axios from "axios";
 import { useApiQuery, useApiMutation } from "./useApi";
 
-
 export interface Product {
   id: number;
   name: string;
@@ -22,7 +21,6 @@ export interface ProductResponse {
   success: boolean;
   data: Product;
 }
-
 
 export interface CartItem {
   id: number;
@@ -65,7 +63,6 @@ export interface UpdateCartData {
   quantity: number;
 }
 
-
 export interface WishlistResponse {
   success: boolean;
   data: any;
@@ -74,7 +71,6 @@ export interface WishlistResponse {
 export interface AddToWishlistData {
   product_id: string | number;
 }
-
 
 export interface OrderItem {
   product_id: string | number;
@@ -120,7 +116,6 @@ export interface OrderResponse {
   };
 }
 
-
 const axiosInstance = axios.create({
   baseURL: `${import.meta.env.VITE_API_URL}`,
   headers: {
@@ -136,7 +131,6 @@ axiosInstance.interceptors.request.use((config) => {
   return config;
 });
 
-
 const handleApiError = (error: any) => {
   let message = "An unexpected error occurred.";
   if (error.response?.data?.message) {
@@ -149,7 +143,6 @@ const handleApiError = (error: any) => {
   throw new Error(message);
 };
 
-
 const ProductService = {
   getProduct: async (id: string | number): Promise<ProductResponse> => {
     try {
@@ -157,11 +150,10 @@ const ProductService = {
       return response.data;
     } catch (error) {
       handleApiError(error);
-      throw error; 
+      throw error;
     }
   },
 };
-
 
 const CartService = {
   getCart: async (): Promise<CartResponse> => {
@@ -222,7 +214,6 @@ const CartService = {
   },
 };
 
-
 const WishlistService = {
   getWishlist: async (): Promise<WishlistResponse> => {
     try {
@@ -261,7 +252,6 @@ const WishlistService = {
   },
 };
 
-
 const OrderService = {
   createOrder: async (data: CreateOrderData): Promise<OrderResponse> => {
     try {
@@ -286,13 +276,12 @@ const OrderService = {
   },
 };
 
-
 export const useProduct = (id: string | number | null) => {
   return useApiQuery({
     queryKey: ["product", id],
     queryFn: () => ProductService.getProduct(id!),
-    enabled: !!id, 
-    staleTime: 5 * 60 * 1000, 
+    enabled: !!id,
+    staleTime: 5 * 60 * 1000,
     retry: 3,
   });
 };
@@ -307,7 +296,7 @@ export const useCart = () => {
     queryKey: ["cart"],
     queryFn: () => CartService.getCart(),
   });
-
+  console.log(cartResponse);
   const store = cartResponse?.data?.store ?? null;
   const cartItems = cartResponse?.data?.items ?? [];
   const total = cartResponse?.data?.total ?? "0.00";
@@ -373,7 +362,6 @@ export const useCart = () => {
   };
 };
 
-
 export const useWishlist = () => {
   const {
     data: wishlistResponse,
@@ -408,7 +396,6 @@ export const useWishlist = () => {
     },
   });
 
-
   const isInWishlist = (productId: string | number) => {
     return wishlistItems.some(
       (item) => item.product_id === productId?.toString()
@@ -430,7 +417,6 @@ export const useWishlist = () => {
   };
 };
 
-
 export const useOrders = () => {
   const createOrderMutation = useApiMutation({
     mutationFn: (data: CreateOrderData) => OrderService.createOrder(data),
@@ -445,7 +431,7 @@ export const useOrders = () => {
   const placeOrderFromCartMutation = useApiMutation({
     mutationFn: (data: PlaceOrderFromCartData) =>
       OrderService.placeOrderFromCart(data),
-    invalidateQueries: [["cart"]], 
+    invalidateQueries: [["cart"]],
     onSuccess: () => {
       console.log("Order placed from cart successfully");
     },
