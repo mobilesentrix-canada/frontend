@@ -296,7 +296,7 @@ export const useCart = () => {
     queryKey: ["cart"],
     queryFn: () => CartService.getCart(),
   });
-  console.log(cartResponse);
+
   const store = cartResponse?.data?.store ?? null;
   const cartItems = cartResponse?.data?.items ?? [];
   const total = cartResponse?.data?.total ?? "0.00";
