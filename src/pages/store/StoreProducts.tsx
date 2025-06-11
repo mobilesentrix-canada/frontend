@@ -28,6 +28,7 @@ import {
   Plus,
   ChevronLeft,
   Search,
+  Minus,
 } from "lucide-react";
 import {
   Collapsible,
@@ -97,6 +98,10 @@ export default function StoreProducts() {
 
   // Add state to track which product is being added to cart
   const [loadingProductId, setLoadingProductId] = useState<number | null>(null);
+  // Add state to track which product cart is being updated
+  const [updatingProductId, setUpdatingProductId] = useState<number | null>(
+    null
+  );
 
   const { toast } = useToast();
 
@@ -105,6 +110,7 @@ export default function StoreProducts() {
     selectedCategoryId || 0
   );
 
+  // Modified the useProducts hook call to handle the category filtering logic
   const {
     products,
     pagination,
@@ -113,11 +119,20 @@ export default function StoreProducts() {
   } = useProducts({
     page: currentPage,
     limit: 12,
-    categoryId: selectedSubCategoryId || selectedCategoryId || undefined,
+    // Only pass categoryId if a subcategory is selected, otherwise show all products
+    categoryId: selectedSubCategoryId || undefined,
     // search: searchQuery || undefined,
   });
 
-  const { addToCart, count: cartCount } = useCart();
+  const {
+    addToCart,
+    count: cartCount,
+    cartItems,
+    updateCartItem,
+    removeCartItem,
+    isUpdatingCart,
+    isRemovingFromCart,
+  } = useCart();
 
   const {
     addToWishlist,
@@ -126,6 +141,17 @@ export default function StoreProducts() {
     isAddingToWishlist,
     isRemovingFromWishlist,
   } = useWishlist();
+
+  // Helper function to get cart item for a specific product
+  const getCartItemForProduct = (productId: number) => {
+    return cartItems.find((item) => item.product.id === productId);
+  };
+
+  // Helper function to get quantity of a product in cart
+  const getProductQuantityInCart = (productId: number) => {
+    const cartItem = getCartItemForProduct(productId);
+    return cartItem ? cartItem.quantity : 0;
+  };
 
   const handleAddToCart = (product: Product) => {
     // Set loading state for this specific product
@@ -156,6 +182,60 @@ export default function StoreProducts() {
         },
       }
     );
+  };
+
+  const handleUpdateCartQuantity = async (
+    product: Product,
+    newQuantity: number
+  ) => {
+    const cartItem = getCartItemForProduct(product.id);
+    if (!cartItem) return;
+
+    if (newQuantity < 1) {
+      handleRemoveFromCart(product);
+      return;
+    }
+
+    setUpdatingProductId(product.id);
+
+    try {
+      await updateCartItem(cartItem.id, { quantity: newQuantity });
+      toast({
+        title: "Cart updated",
+        description: `${product.name} quantity updated`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update cart",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingProductId(null);
+    }
+  };
+
+  const handleRemoveFromCart = async (product: Product) => {
+    const cartItem = getCartItemForProduct(product.id);
+    if (!cartItem) return;
+
+    setUpdatingProductId(product.id);
+
+    try {
+      await removeCartItem(cartItem.id);
+      toast({
+        title: "Removed from cart",
+        description: `${product.name} has been removed from your cart`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to remove from cart",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingProductId(null);
+    }
   };
 
   const handleWishlistToggle = (product: Product) => {
@@ -470,7 +550,7 @@ export default function StoreProducts() {
                       )?.name
                     }
                   </h3>
-                  {/* <div className="mb-6">
+                  <div className="mb-6">
                     <div className="relative max-w-md">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                       <Input
@@ -492,7 +572,7 @@ export default function StoreProducts() {
                         </button>
                       )}
                     </div>
-                  </div> */}
+                  </div>
                   {subCategoriesLoading ? (
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
                       {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -585,144 +665,157 @@ export default function StoreProducts() {
         </CardContent>
       </Card>
 
-      {/* Products Grid */}
-      {!selectedCategoryId || selectedSubCategoryId ? (
-        <>
-          {productsLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                <Card key={i} className="overflow-hidden">
-                  <Skeleton className="aspect-square w-full" />
-                  <CardHeader>
-                    <Skeleton className="h-6 w-3/4" />
-                    <Skeleton className="h-4 w-full" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <Skeleton className="h-8 w-20" />
-                        <Skeleton className="h-4 w-16 mt-1" />
-                      </div>
-                      <div className="flex gap-2">
-                        <Skeleton className="h-8 w-20" />
-                        <Skeleton className="h-8 w-20" />
-                      </div>
+      {/* Products Grid - Now always visible */}
+      <>
+        {productsLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+              <Card key={i} className="overflow-hidden">
+                <Skeleton className="aspect-square w-full" />
+                <CardHeader>
+                  <Skeleton className="h-6 w-3/4" />
+                  <Skeleton className="h-4 w-full" />
+                </CardHeader>
+                <CardContent>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <Skeleton className="h-8 w-20" />
+                      <Skeleton className="h-4 w-16 mt-1" />
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : products.length > 0 ? (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
-                {products.map((product) => {
-                  // Check if this specific product is loading
-                  const isThisProductLoading = loadingProductId === product.id;
+                    <div className="flex gap-2">
+                      <Skeleton className="h-8 w-20" />
+                      <Skeleton className="h-8 w-20" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : products.length > 0 ? (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
+              {products.map((product) => {
+                // Check if this specific product is loading
+                const isThisProductLoading = loadingProductId === product.id;
+                const isThisProductUpdating = updatingProductId === product.id;
+                const cartQuantity = getProductQuantityInCart(product.id);
+                const isInCart = cartQuantity > 0;
 
-                  return (
-                    <Card
-                      key={product.id}
-                      className="hover:shadow-lg transition-all duration-300 overflow-hidden group"
-                    >
-                      <div className="aspect-square relative overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
-                        {product.image ? (
-                          <img
-                            src={product.image}
-                            alt={product.name}
-                            style={{ objectFit: "contain" }}
-                            className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              target.style.display = "none";
-                              const fallback =
-                                target.nextElementSibling as HTMLElement;
-                              if (fallback) {
-                                fallback.style.display = "flex";
-                              }
-                            }}
-                          />
-                        ) : null}
+                return (
+                  <Card
+                    key={product.id}
+                    className="hover:shadow-lg transition-all duration-300 overflow-hidden group"
+                  >
+                    <div className="aspect-square relative overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
+                      {product.image ? (
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          style={{ objectFit: "contain" }}
+                          className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = "none";
+                            const fallback =
+                              target.nextElementSibling as HTMLElement;
+                            if (fallback) {
+                              fallback.style.display = "flex";
+                            }
+                          }}
+                        />
+                      ) : null}
 
-                        <div
-                          className={`w-full h-full flex items-center justify-center ${
-                            product.image ? "hidden" : "flex"
-                          }`}
-                          style={{ display: product.image ? "none" : "flex" }}
-                        >
-                          <div className="text-center p-4">
-                            <div className="w-20 h-20 mx-auto mb-3 bg-white rounded-full flex items-center justify-center shadow-sm">
-                              <Grid3X3 className="w-10 h-10 text-gray-400" />
-                            </div>
-                            <p className="text-xs text-gray-500 font-medium">
-                              {product.manufacturer}
-                            </p>
-                            <p className="text-xs text-gray-400">
-                              {product.model}
-                            </p>
+                      <div
+                        className={`w-full h-full flex items-center justify-center ${
+                          product.image ? "hidden" : "flex"
+                        }`}
+                        style={{ display: product.image ? "none" : "flex" }}
+                      >
+                        <div className="text-center p-4">
+                          <div className="w-20 h-20 mx-auto mb-3 bg-white rounded-full flex items-center justify-center shadow-sm">
+                            <Grid3X3 className="w-10 h-10 text-gray-400" />
                           </div>
-                        </div>
-
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className={cn(
-                            "absolute top-3 left-3 h-9 w-9 p-0 rounded-full bg-white/95 hover:bg-white shadow-sm",
-                            "transition-all duration-200 hover:scale-110",
-                            isInWishlist(product.id) && "text-red-500 bg-red-50"
-                          )}
-                          onClick={() => handleWishlistToggle(product)}
-                          disabled={
-                            isAddingToWishlist || isRemovingFromWishlist
-                          }
-                        >
-                          <Heart
-                            className={cn(
-                              "w-4 h-4 transition-all",
-                              isInWishlist(product.id) &&
-                                "fill-current scale-110"
-                            )}
-                          />
-                        </Button>
-                        {product?.manufacturer && (
-                          <Badge className="absolute top-3 right-3 bg-white text-gray-900 shadow-sm">
+                          <p className="text-xs text-gray-500 font-medium">
                             {product.manufacturer}
-                          </Badge>
-                        )}
-                        {product?.badges?.length > 0 && (
-                          <div className="absolute bottom-3 left-3 flex flex-wrap gap-1">
-                            <Badge className="bg-blue-500 text-white shadow-sm text-xs">
-                              {product?.badges}
-                            </Badge>
-                          </div>
-                        )}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {product.model}
+                          </p>
+                        </div>
                       </div>
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-lg leading-tight line-clamp-2">
-                          {product.name}
-                        </CardTitle>
 
-                        {product.sku && (
-                          <div className="flex gap-1 flex-wrap">
-                            <Badge variant="outline" className="text-xs">
-                              SKU: {product.sku}
-                            </Badge>
-                            {product.model && (
-                              <Badge variant="outline" className="text-xs">
-                                {product.model}
-                              </Badge>
-                            )}
-                          </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                          "absolute top-3 left-3 h-9 w-9 p-0 rounded-full bg-white/95 hover:bg-white shadow-sm",
+                          "transition-all duration-200 hover:scale-110",
+                          isInWishlist(product.id) && "text-red-500 bg-red-50"
                         )}
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex justify-between items-end">
-                          <div></div>
-                          <div className="flex gap-2">
-                            <Link to={`/store/product/${product.id}`}>
-                              <Button variant="outline" size="sm">
-                                View
-                              </Button>
-                            </Link>
+                        onClick={() => handleWishlistToggle(product)}
+                        disabled={isAddingToWishlist || isRemovingFromWishlist}
+                      >
+                        <Heart
+                          className={cn(
+                            "w-4 h-4 transition-all",
+                            isInWishlist(product.id) && "fill-current scale-110"
+                          )}
+                        />
+                      </Button>
+                      {product?.manufacturer && (
+                        <Badge className="absolute top-3 right-3 bg-white text-gray-900 shadow-sm">
+                          {product.manufacturer}
+                        </Badge>
+                      )}
+                      {product?.badges?.length > 0 && (
+                        <div className="absolute bottom-3 left-3 flex flex-wrap gap-1">
+                          <Badge className="bg-blue-500 text-white shadow-sm text-xs">
+                            {product?.badges}
+                          </Badge>
+                        </div>
+                      )}
+
+                      {/* Cart quantity indicator */}
+                      {isInCart && (
+                        <div className="absolute bottom-3 right-3">
+                          <Badge className="bg-green-500 text-white shadow-sm">
+                            {cartQuantity} in cart
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-lg leading-tight line-clamp-2">
+                        {product.name}
+                      </CardTitle>
+
+                      {product.sku && (
+                        <div className="flex gap-1 flex-wrap">
+                          <Badge variant="outline" className="text-xs">
+                            SKU: {product.sku}
+                          </Badge>
+                          {product.model && (
+                            <Badge variant="outline" className="text-xs">
+                              {product.model}
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex justify-between items-end">
+                        <div></div>
+
+                        {/* Cart Controls */}
+                        <div className="flex gap-2 items-center">
+                          <Link to={`/store/product/${product.id}`}>
+                            <Button variant="outline" size="sm">
+                              View
+                            </Button>
+                          </Link>
+
+                          {!isInCart ? (
+                            // Add to Cart button when not in cart
                             <Button
                               size="sm"
                               onClick={() => handleAddToCart(product)}
@@ -743,104 +836,147 @@ export default function StoreProducts() {
                                 </>
                               )}
                             </Button>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-
-              {pagination && pagination.pages > 1 && (
-                <Card className="mt-8">
-                  <CardContent className="p-4">
-                    <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                      <div className="text-sm text-gray-600">
-                        Page {currentPage} of {pagination.pages}
-                        {pagination.total && (
-                          <span className="ml-2">
-                            ({pagination.total} total products)
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handlePageChange(currentPage - 1)}
-                          disabled={currentPage === 1}
-                          className="flex items-center gap-1"
-                        >
-                          <ChevronLeft className="w-4 h-4" />
-                          Previous
-                        </Button>
-
-                        <div className="flex gap-1">
-                          {generatePaginationNumbers().map((page, index) => {
-                            if (page === "...") {
-                              return (
-                                <span
-                                  key={`ellipsis-${index}`}
-                                  className="px-3 py-2 text-gray-500"
-                                >
-                                  ...
-                                </span>
-                              );
-                            }
-
-                            const pageNum = page as number;
-                            return (
+                          ) : (
+                            // Quantity controls when in cart
+                            <div className="flex items-center gap-1 bg-gray-50 rounded-lg p-1">
                               <Button
-                                key={pageNum}
-                                variant={
-                                  currentPage === pageNum
-                                    ? "default"
-                                    : "outline"
-                                }
+                                variant="ghost"
                                 size="sm"
-                                onClick={() => handlePageChange(pageNum)}
-                                className="min-w-[40px]"
+                                onClick={() =>
+                                  handleUpdateCartQuantity(
+                                    product,
+                                    cartQuantity - 1
+                                  )
+                                }
+                                disabled={
+                                  isThisProductUpdating || cartQuantity <= 1
+                                }
+                                className="h-8 w-8 p-0 hover:bg-gray-200"
                               >
-                                {pageNum}
+                                {cartQuantity <= 1 ? (
+                                  <X className="w-3 h-3" />
+                                ) : (
+                                  <Minus className="w-3 h-3" />
+                                )}
                               </Button>
-                            );
-                          })}
-                        </div>
 
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handlePageChange(currentPage + 1)}
-                          disabled={currentPage === pagination.pages}
-                          className="flex items-center gap-1"
-                        >
-                          Next
-                          <ChevronRight className="w-4 h-4" />
-                        </Button>
+                              <span className="px-3 py-1 text-sm font-medium min-w-[2rem] text-center">
+                                {isThisProductUpdating ? (
+                                  <div className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                  cartQuantity
+                                )}
+                              </span>
+
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  handleUpdateCartQuantity(
+                                    product,
+                                    cartQuantity + 1
+                                  )
+                                }
+                                disabled={
+                                  isThisProductUpdating || cartQuantity >= 99
+                                }
+                                className="h-8 w-8 p-0 hover:bg-gray-200"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </>
-          ) : (
-            <div className="text-center py-12">
-              <Grid3X3 className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-              <p className="text-gray-500 text-lg">No products found</p>
-              {(selectedCategoryId || selectedSubCategoryId || searchQuery) && (
-                <Button
-                  variant="outline"
-                  onClick={clearFilters}
-                  className="mt-4"
-                >
-                  Clear Filters
-                </Button>
-              )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
-          )}
-        </>
-      ) : null}
+
+            {pagination && pagination.pages > 1 && (
+              <Card className="mt-8">
+                <CardContent className="p-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <div className="text-sm text-gray-600">
+                      Page {currentPage} of {pagination.pages}
+                      {pagination.total && (
+                        <span className="ml-2">
+                          ({pagination.total} total products)
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="flex items-center gap-1"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                        Previous
+                      </Button>
+
+                      <div className="flex gap-1">
+                        {generatePaginationNumbers().map((page, index) => {
+                          if (page === "...") {
+                            return (
+                              <span
+                                key={`ellipsis-${index}`}
+                                className="px-3 py-2 text-gray-500"
+                              >
+                                ...
+                              </span>
+                            );
+                          }
+
+                          const pageNum = page as number;
+                          return (
+                            <Button
+                              key={pageNum}
+                              variant={
+                                currentPage === pageNum ? "default" : "outline"
+                              }
+                              size="sm"
+                              onClick={() => handlePageChange(pageNum)}
+                              className="min-w-[40px]"
+                            >
+                              {pageNum}
+                            </Button>
+                          );
+                        })}
+                      </div>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage === pagination.pages}
+                        className="flex items-center gap-1"
+                      >
+                        Next
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </>
+        ) : (
+          <div className="text-center py-12">
+            <Grid3X3 className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+            <p className="text-gray-500 text-lg">No products found</p>
+            {(selectedCategoryId || selectedSubCategoryId || searchQuery) && (
+              <Button variant="outline" onClick={clearFilters} className="mt-4">
+                Clear Filters
+              </Button>
+            )}
+          </div>
+        )}
+      </>
     </div>
   );
 }

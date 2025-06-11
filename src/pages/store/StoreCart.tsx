@@ -25,6 +25,7 @@ import {
   CreditCard,
   Package,
   Grid3X3,
+  ExternalLink,
 } from "lucide-react";
 
 export default function StoreCart() {
@@ -32,6 +33,11 @@ export default function StoreCart() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+
+  // Track loading states for individual items
+  const [removingItems, setRemovingItems] = useState<Set<number>>(new Set());
+  const [updatingItems, setUpdatingItems] = useState<Set<number>>(new Set());
+
   const {
     store,
     cartItems,
@@ -49,21 +55,48 @@ export default function StoreCart() {
 
   const { placeOrderFromCart, isPlacingOrderFromCart } = useOrders();
 
-  const handleQuantityChange = (cartItemId: number, newQuantity: number) => {
+  const handleQuantityChange = async (
+    cartItemId: number,
+    newQuantity: number
+  ) => {
     if (newQuantity < 1) {
       handleRemoveItem(cartItemId);
       return;
     }
 
-    updateCartItem(cartItemId, { quantity: newQuantity });
+    // Add item to updating set
+    setUpdatingItems((prev) => new Set(prev).add(cartItemId));
+
+    try {
+      await updateCartItem(cartItemId, { quantity: newQuantity });
+    } finally {
+      // Remove item from updating set
+      setUpdatingItems((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(cartItemId);
+        return newSet;
+      });
+    }
   };
 
-  const handleRemoveItem = (cartItemId: number) => {
-    removeCartItem(cartItemId);
-    toast({
-      title: "Item removed",
-      description: "Product has been removed from your cart",
-    });
+  const handleRemoveItem = async (cartItemId: number) => {
+    // Add item to removing set
+    setRemovingItems((prev) => new Set(prev).add(cartItemId));
+
+    try {
+      await removeCartItem(cartItemId);
+      toast({
+        title: "Item removed",
+        description: "Product has been removed from your cart",
+      });
+    } finally {
+      // Remove item from removing set
+      setRemovingItems((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(cartItemId);
+        return newSet;
+      });
+    }
   };
 
   const handleClearCart = () => {
@@ -123,6 +156,16 @@ export default function StoreCart() {
     } finally {
       setIsCheckingOut(false);
     }
+  };
+
+  // Handle navigation to product detail page
+  const handleProductClick = (productId: number) => {
+    navigate(`/store/product/${productId}`);
+  };
+
+  // Handle preventing clicks on interactive elements
+  const handleInteractiveClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
   };
 
   if (isLoading) {
@@ -263,110 +306,136 @@ export default function StoreCart() {
             </Badge>
           </div>
 
-          {cartItems.map((item) => (
-            <Card key={item.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-6">
-                <div className="flex items-center space-x-4">
-                  <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
-                    {item.product?.image ? (
-                      <img
-                        src={item.product.image}
-                        alt={item.product.name}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          target.style.display = "none";
-                          const fallback =
-                            target.nextElementSibling as HTMLElement;
-                          if (fallback) {
-                            fallback.style.display = "flex";
-                          }
+          {cartItems.map((item) => {
+            const isItemRemoving = removingItems.has(item.id);
+            const isItemUpdating = updatingItems.has(item.id);
+
+            return (
+              <Card
+                key={item.id}
+                className="hover:shadow-md transition-shadow cursor-pointer group relative"
+                onClick={() => handleProductClick(item.product.id)}
+              >
+                <CardContent className="p-6">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0 relative">
+                      {item.product?.image ? (
+                        <img
+                          src={item.product.image}
+                          alt={item.product.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = "none";
+                            const fallback =
+                              target.nextElementSibling as HTMLElement;
+                            if (fallback) {
+                              fallback.style.display = "flex";
+                            }
+                          }}
+                        />
+                      ) : null}
+
+                      <div
+                        className="w-full h-full flex items-center justify-center"
+                        style={{
+                          display: item.product?.image ? "none" : "flex",
                         }}
-                      />
-                    ) : null}
+                      >
+                        <Grid3X3 className="w-6 h-6 text-gray-400" />
+                      </div>
+
+                      {/* Hover overlay to indicate clickability */}
+                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 flex items-center justify-center">
+                        <ExternalLink className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                      </div>
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-gray-900 truncate group-hover:text-blue-600 transition-colors duration-200">
+                        {item.product.name}
+                      </h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="outline" className="text-xs">
+                          {item.product.manufacturer}
+                        </Badge>
+                        {item.product.sku && (
+                          <Badge variant="outline" className="text-xs">
+                            SKU: {item.product.sku}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                        <ExternalLink className="w-3 h-3" />
+                        Click to view product details
+                      </p>
+                    </div>
 
                     <div
-                      className="w-full h-full flex items-center justify-center"
-                      style={{ display: item.product?.image ? "none" : "flex" }}
+                      className="flex items-center space-x-2"
+                      onClick={handleInteractiveClick}
                     >
-                      <Grid3X3 className="w-6 h-6 text-gray-400" />
-                    </div>
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 truncate">
-                      {item.product.name}
-                    </h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="outline" className="text-xs">
-                        {item.product.manufacturer}
-                      </Badge>
-                      {item.product.sku && (
-                        <Badge variant="outline" className="text-xs">
-                          SKU: {item.product.sku}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        handleQuantityChange(item.id, item.quantity - 1)
-                      }
-                      disabled={isUpdatingCart || item.quantity <= 1}
-                      className="h-9 w-9 p-0"
-                    >
-                      <Minus className="w-4 h-4" />
-                    </Button>
-
-                    <Input
-                      type="number"
-                      min="1"
-                      max="99"
-                      value={item.quantity}
-                      onChange={(e) => {
-                        const value = parseInt(e.target.value);
-                        if (!isNaN(value) && value > 0) {
-                          handleQuantityChange(item.id, value);
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          handleQuantityChange(item.id, item.quantity - 1)
                         }
-                      }}
-                      className="w-16 text-center"
-                      disabled={isUpdatingCart}
-                    />
+                        disabled={isItemUpdating || item.quantity <= 1}
+                        className="h-9 w-9 p-0"
+                      >
+                        <Minus className="w-4 h-4" />
+                      </Button>
+
+                      <Input
+                        type="number"
+                        min="1"
+                        max="99"
+                        value={item.quantity}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value);
+                          if (!isNaN(value) && value > 0) {
+                            handleQuantityChange(item.id, value);
+                          }
+                        }}
+                        className="w-16 text-center"
+                        disabled={isItemUpdating}
+                      />
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          handleQuantityChange(item.id, item.quantity + 1)
+                        }
+                        disabled={isItemUpdating || item.quantity >= 99}
+                        className="h-9 w-9 p-0"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </Button>
+                    </div>
 
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
-                      onClick={() =>
-                        handleQuantityChange(item.id, item.quantity + 1)
-                      }
-                      disabled={isUpdatingCart || item.quantity >= 99}
-                      className="h-9 w-9 p-0"
+                      onClick={(e) => {
+                        handleInteractiveClick(e);
+                        handleRemoveItem(item.id);
+                      }}
+                      disabled={isItemRemoving}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
-                      <Plus className="w-4 h-4" />
+                      {isItemRemoving ? (
+                        <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <X className="w-4 h-4" />
+                      )}
                     </Button>
                   </div>
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleRemoveItem(item.id)}
-                    disabled={isRemovingFromCart}
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                  >
-                    {isRemovingFromCart ? (
-                      <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <X className="w-4 h-4" />
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
 
         <div>

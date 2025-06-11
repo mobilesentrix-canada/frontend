@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,11 +36,12 @@ export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [quantity, setQuantity] = useState(1);
+  const [isAddingToCart, setIsAddingToCart] = useState(false);
 
   const { toast } = useToast();
 
   const { product, isLoading, error } = useProduct(id ? parseInt(id) : 0);
-  const { addToCart, isAddingToCart } = useCart();
+  const { addToCart, cartItems, updateCartItem, removeCartItem } = useCart();
   const {
     addToWishlist,
     removeFromWishlist,
@@ -49,74 +50,95 @@ export default function ProductDetail() {
     isRemovingFromWishlist,
   } = useWishlist();
 
-  const handleAddToCart = () => {
-    if (!product) return;
-
-    addToCart(
-      {
-        product_id: product.id,
-        quantity: quantity,
-      },
-      {
-        onSuccess: () => {
-          toast({
-            title: "Added to cart",
-            description: `${quantity} x ${product.name} added to your cart`,
-          });
-
-          navigate("/store/cart");
-        },
-        onError: (error: any) => {
-          toast({
-            title: "Error",
-            description: error.message || "Failed to add product to cart",
-            variant: "destructive",
-          });
-        },
-      }
-    );
+  // Helper functions to work with cart
+  const getCartItemForProduct = (productId: number) => {
+    return cartItems.find((item) => item.product.id === productId);
   };
 
-  const handleWishlistToggle = () => {
+  const getProductQuantityInCart = (productId: number) => {
+    const cartItem = getCartItemForProduct(productId);
+    return cartItem ? cartItem.quantity : 0;
+  };
+
+  // Set initial quantity based on cart when product loads
+  useEffect(() => {
+    if (product) {
+      const cartQuantity = getProductQuantityInCart(product.id);
+      if (cartQuantity > 0) {
+        setQuantity(cartQuantity);
+      }
+    }
+  }, [product, cartItems]);
+
+  const isProductInCart = product
+    ? getProductQuantityInCart(product.id) > 0
+    : false;
+
+  const handleAddToCart = async () => {
+    if (!product) return;
+
+    setIsAddingToCart(true);
+
+    try {
+      if (isProductInCart) {
+        // Update existing cart item
+        const cartItem = getCartItemForProduct(product.id);
+        if (cartItem) {
+          await updateCartItem(cartItem.id, { quantity: quantity });
+          toast({
+            title: "Cart updated",
+            description: `${product.name} quantity updated to ${quantity}`,
+          });
+        }
+      } else {
+        // Add new item to cart
+        await addToCart({
+          product_id: product.id,
+          quantity: quantity,
+        });
+        toast({
+          title: "Added to cart",
+          description: `${quantity} x ${product.name} added to your cart`,
+        });
+      }
+
+      navigate("/store/cart");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add product to cart",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAddingToCart(false);
+    }
+  };
+
+  const handleWishlistToggle = async () => {
     if (!product) return;
 
     const productId = product.id;
 
-    if (isInWishlist(productId)) {
-      removeFromWishlist(productId, {
-        onSuccess: () => {
-          toast({
-            title: "Removed from wishlist",
-            description: `${product.name} has been removed from your wishlist`,
-          });
-        },
-        onError: (error: any) => {
-          toast({
-            title: "Error",
-            description: error.message || "Failed to remove from wishlist",
-            variant: "destructive",
-          });
-        },
+    try {
+      if (isInWishlist(productId)) {
+        await removeFromWishlist(productId);
+        toast({
+          title: "Removed from wishlist",
+          description: `${product.name} has been removed from your wishlist`,
+        });
+      } else {
+        await addToWishlist({ product_id: productId });
+        toast({
+          title: "Added to wishlist",
+          description: `${product.name} has been added to your wishlist`,
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update wishlist",
+        variant: "destructive",
       });
-    } else {
-      addToWishlist(
-        { product_id: productId },
-        {
-          onSuccess: () => {
-            toast({
-              title: "Added to wishlist",
-              description: `${product.name} has been added to your wishlist`,
-            });
-          },
-          onError: (error: any) => {
-            toast({
-              title: "Error",
-              description: error.message || "Failed to add to wishlist",
-              variant: "destructive",
-            });
-          },
-        }
-      );
     }
   };
 
@@ -386,7 +408,13 @@ export default function ProductDetail() {
               {!isOutOfStock && (
                 <div className="space-y-3">
                   <Label htmlFor="quantity" className="text-sm font-medium">
-                    Quantity
+                    Quantity{" "}
+                    {isProductInCart && (
+                      <span className="text-green-600 font-normal">
+                        (Currently {getProductQuantityInCart(product.id)} in
+                        cart)
+                      </span>
+                    )}
                   </Label>
                   <div className="flex items-center gap-3">
                     <Button
@@ -432,12 +460,14 @@ export default function ProductDetail() {
                   {isAddingToCart ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                      Adding to Cart...
+                      {isProductInCart
+                        ? "Updating Cart..."
+                        : "Adding to Cart..."}
                     </>
                   ) : (
                     <>
                       <ShoppingCart className="w-5 h-5 mr-2" />
-                      Add to Cart
+                      {isProductInCart ? "Update Cart" : "Add to Cart"}
                     </>
                   )}
                 </Button>
