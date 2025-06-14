@@ -813,79 +813,62 @@ export default function StoreProducts() {
                               View
                             </Button>
                           </Link>
-
-                          {!isInCart ? (
-                            // Add to Cart button when not in cart
+                          <div className="flex items-center gap-1 bg-gray-50 rounded-lg p-1">
                             <Button
+                              variant="ghost"
                               size="sm"
-                              onClick={() => handleAddToCart(product)}
-                              disabled={
-                                product.status === 0 || isThisProductLoading
+                              onClick={() =>
+                                cartQuantity === 0
+                                  ? handleAddToCart(product)
+                                  : handleUpdateCartQuantity(
+                                      product,
+                                      cartQuantity - 1
+                                    )
                               }
-                              className="flex items-center gap-1"
+                              disabled={
+                                isThisProductUpdating || isThisProductLoading
+                              }
+                              className="h-8 w-8 p-0 hover:bg-gray-200"
                             >
-                              {isThisProductLoading ? (
-                                <>
-                                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                  Adding...
-                                </>
+                              {cartQuantity === 0 ? (
+                                <Plus className="w-3 h-3" />
+                              ) : cartQuantity === 1 ? (
+                                <X className="w-3 h-3" />
                               ) : (
-                                <>
-                                  <Plus className="w-3 h-3" />
-                                  Add to Cart
-                                </>
+                                <Minus className="w-3 h-3" />
                               )}
                             </Button>
-                          ) : (
-                            // Quantity controls when in cart
-                            <div className="flex items-center gap-1 bg-gray-50 rounded-lg p-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() =>
-                                  handleUpdateCartQuantity(
-                                    product,
-                                    cartQuantity - 1
-                                  )
-                                }
-                                disabled={
-                                  isThisProductUpdating || cartQuantity <= 1
-                                }
-                                className="h-8 w-8 p-0 hover:bg-gray-200"
-                              >
-                                {cartQuantity <= 1 ? (
-                                  <X className="w-3 h-3" />
-                                ) : (
-                                  <Minus className="w-3 h-3" />
-                                )}
-                              </Button>
 
-                              <span className="px-3 py-1 text-sm font-medium min-w-[2rem] text-center">
-                                {isThisProductUpdating ? (
-                                  <div className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
-                                ) : (
-                                  cartQuantity
-                                )}
-                              </span>
+                            <span className="px-3 py-1 text-sm font-medium min-w-[2rem] text-center">
+                              {isThisProductUpdating || isThisProductLoading ? (
+                                <div className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                cartQuantity
+                              )}
+                            </span>
 
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() =>
-                                  handleUpdateCartQuantity(
-                                    product,
-                                    cartQuantity + 1
-                                  )
-                                }
-                                disabled={
-                                  isThisProductUpdating || cartQuantity >= 99
-                                }
-                                className="h-8 w-8 p-0 hover:bg-gray-200"
-                              >
-                                <Plus className="w-3 h-3" />
-                              </Button>
-                            </div>
-                          )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                cartQuantity === 0
+                                  ? handleAddToCart(product)
+                                  : handleUpdateCartQuantity(
+                                      product,
+                                      cartQuantity + 1
+                                    )
+                              }
+                              disabled={
+                                isThisProductUpdating ||
+                                isThisProductLoading ||
+                                cartQuantity >= 99 ||
+                                product.status === 0
+                              }
+                              className="h-8 w-8 p-0 hover:bg-gray-200"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </CardContent>
