@@ -103,6 +103,11 @@ export default function StoreProducts() {
   );
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
+  // Local quantity state for products before adding to cart
+  const [localQuantities, setLocalQuantities] = useState<
+    Record<number, number>
+  >({});
+
   // Refs to maintain focus
   const searchInputRef = useRef<HTMLInputElement>(null);
   const mobileSearchInputRef = useRef<HTMLInputElement>(null);
@@ -339,6 +344,28 @@ export default function StoreProducts() {
     [getCartItemForProduct]
   );
 
+  // Get local quantity (quantity selector) for a product
+  const getLocalQuantity = useCallback(
+    (productId: number) => {
+      return localQuantities[productId] || 1;
+    },
+    [localQuantities]
+  );
+
+  // Update local quantity (before adding to cart)
+  const updateLocalQuantity = useCallback(
+    (productId: number, quantity: number) => {
+      if (quantity < 1) quantity = 1;
+      if (quantity > 99) quantity = 99;
+
+      setLocalQuantities((prev) => ({
+        ...prev,
+        [productId]: quantity,
+      }));
+    },
+    []
+  );
+
   const handleAddToCart = useCallback(
     async (product: Product) => {
       if (!product || !product.id) {
@@ -350,15 +377,23 @@ export default function StoreProducts() {
         return;
       }
 
+      const quantityToAdd = getLocalQuantity(product.id);
       setLoadingProductId(product.id);
+
       try {
         await addToCart(
-          { product_id: product.id, quantity: 1 },
+          { product_id: product.id, quantity: quantityToAdd },
           {
             onSuccess: () => {
               toast({
                 title: "Added to cart",
-                description: `${product.name} has been added to your cart`,
+                description: `${quantityToAdd} x ${product.name} added to your cart`,
+              });
+              // Reset local quantity after successful add
+              setLocalQuantities((prev) => {
+                const newState = { ...prev };
+                delete newState[product.id];
+                return newState;
               });
             },
             onError: (error: any) => {
@@ -380,7 +415,7 @@ export default function StoreProducts() {
         setLoadingProductId(null);
       }
     },
-    [addToCart, toast]
+    [addToCart, toast, getLocalQuantity]
   );
 
   const handleUpdateCartQuantity = useCallback(
@@ -1236,77 +1271,155 @@ export default function StoreProducts() {
                       </CardHeader>
 
                       <CardContent className="p-3 lg:p-4 pt-0">
-                        <div className="flex gap-2 items-center">
-                          <Link to={`/store/product/${product.id}`}>
+                        <div className="space-y-2">
+                          {/* View Product Button */}
+                          <Link
+                            to={`/store/product/${product.id}`}
+                            className="block"
+                          >
                             <Button
                               variant="outline"
                               size="sm"
-                              className="text-xs flex-1 lg:flex-none"
+                              className="w-full text-xs"
                             >
-                              View
+                              View Details
                             </Button>
                           </Link>
-                          <div className="flex items-center gap-1 bg-gray-50 rounded p-1">
-                            {/* Left side - Minus button (only show when quantity > 0) */}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                cartQuantity === 1
-                                  ? handleRemoveFromCart(product)
-                                  : handleUpdateCartQuantity(
-                                      product,
-                                      cartQuantity - 1
-                                    )
-                              }
-                              disabled={
-                                isThisProductUpdating ||
-                                isThisProductLoading ||
-                                cartQuantity === 0
-                              }
-                              className={`h-6 w-6 p-0 ${
-                                cartQuantity === 0 ? "opacity-30" : ""
-                              }`}
-                            >
-                              {cartQuantity === 1 ? (
-                                <X className="w-3 h-3" />
-                              ) : (
-                                <Minus className="w-3 h-3" />
-                              )}
-                            </Button>
 
-                            {/* Center - Quantity display */}
-                            <span className="px-2 text-sm font-medium min-w-[1.5rem] text-center">
-                              {isThisProductUpdating || isThisProductLoading ? (
-                                <div className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
-                              ) : (
-                                cartQuantity
-                              )}
-                            </span>
+                          {/* Cart Controls */}
+                          {!isInCart ? (
+                            /* Quantity Selector + Add to Cart - Show when not in cart */
+                            <div className="space-y-2">
+                              {/* Quantity Selector */}
+                              <div className="flex items-center justify-between bg-gray-50 rounded p-2">
+                                <span className="text-sm font-medium text-gray-700">
+                                  Quantity:
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                      updateLocalQuantity(
+                                        product.id,
+                                        getLocalQuantity(product.id) - 1
+                                      )
+                                    }
+                                    disabled={getLocalQuantity(product.id) <= 1}
+                                    className="h-7 w-7 p-0"
+                                  >
+                                    <Minus className="w-3 h-3" />
+                                  </Button>
 
-                            {/* Right side - Plus button (always show) */}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                cartQuantity === 0
-                                  ? handleAddToCart(product)
-                                  : handleUpdateCartQuantity(
+                                  <span className="px-3 py-1 bg-white rounded border text-sm font-medium min-w-[3rem] text-center">
+                                    {getLocalQuantity(product.id)}
+                                  </span>
+
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                      updateLocalQuantity(
+                                        product.id,
+                                        getLocalQuantity(product.id) + 1
+                                      )
+                                    }
+                                    disabled={
+                                      getLocalQuantity(product.id) >= 99
+                                    }
+                                    className="h-7 w-7 p-0"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              </div>
+
+                              {/* Add to Cart Button */}
+                              <Button
+                                onClick={() => handleAddToCart(product)}
+                                disabled={
+                                  isThisProductLoading ||
+                                  isThisProductUpdating ||
+                                  product.status === 0
+                                }
+                                size="sm"
+                                className="w-full bg-red-600 hover:bg-red-700 text-white"
+                              >
+                                {isThisProductLoading ? (
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    Adding...
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2">
+                                    <ShoppingCart className="w-4 h-4" />
+                                    Add {getLocalQuantity(product.id)} to Cart
+                                  </div>
+                                )}
+                              </Button>
+                            </div>
+                          ) : (
+                            /* Cart Quantity Controls - Only show when in cart */
+                            <div className="flex items-center justify-between bg-green-50 rounded p-2 border border-green-200">
+                              <span className="text-sm font-medium text-green-700">
+                                In Cart:
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    cartQuantity === 1
+                                      ? handleRemoveFromCart(product)
+                                      : handleUpdateCartQuantity(
+                                          product,
+                                          cartQuantity - 1
+                                        )
+                                  }
+                                  disabled={
+                                    isThisProductUpdating ||
+                                    isThisProductLoading
+                                  }
+                                  className="h-7 w-7 p-0"
+                                >
+                                  {cartQuantity === 1 ? (
+                                    <X className="w-3 h-3" />
+                                  ) : (
+                                    <Minus className="w-3 h-3" />
+                                  )}
+                                </Button>
+
+                                <span className="px-3 py-1 bg-white rounded border text-sm font-medium min-w-[3rem] text-center">
+                                  {isThisProductUpdating ||
+                                  isThisProductLoading ? (
+                                    <div className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                                  ) : (
+                                    cartQuantity
+                                  )}
+                                </span>
+
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    handleUpdateCartQuantity(
                                       product,
                                       cartQuantity + 1
                                     )
-                              }
-                              disabled={
-                                isThisProductUpdating ||
-                                isThisProductLoading ||
-                                cartQuantity >= 99 ||
-                                product.status === 0
-                              }
-                              className="h-6 w-6 p-0"
-                            >
-                              <Plus className="w-3 h-3" />
-                            </Button>
-                          </div>
+                                  }
+                                  disabled={
+                                    isThisProductUpdating ||
+                                    isThisProductLoading ||
+                                    cartQuantity >= 99 ||
+                                    product.status === 0
+                                  }
+                                  className="h-7 w-7 p-0"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </CardContent>
                     </Card>

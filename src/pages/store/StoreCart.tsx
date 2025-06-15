@@ -301,9 +301,6 @@ export default function StoreCart() {
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
             <h1 className="text-3xl font-bold text-gray-900">Shopping Cart</h1>
-            <Badge variant="secondary" className="text-sm">
-              {count} {count === 1 ? "item" : "items"}
-            </Badge>
           </div>
 
           {cartItems.map((item) => {
