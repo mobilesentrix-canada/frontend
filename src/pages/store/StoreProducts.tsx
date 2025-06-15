@@ -228,15 +228,6 @@ export default function StoreProducts() {
     // Add nested subcategories that have been loaded through navigation
     allData.push(...additionalNestedData);
 
-    console.log(`📊 Search data contains ${allData.length} items:`, {
-      categories: allData.filter((item) => item.type === "category").length,
-      subcategories: allData.filter((item) => item.type === "subcategory")
-        .length,
-      nestedSubcategories: allData.filter(
-        (item) => item.type === "nestedSubcategory"
-      ).length,
-    });
-
     return allData;
   }, [allCategoryHooks, additionalNestedData]);
 
@@ -272,50 +263,24 @@ export default function StoreProducts() {
         if (aStartsWithQuery && !bStartsWithQuery) return -1;
         if (!aStartsWithQuery && bStartsWithQuery) return 1;
 
-        // Finally sort by level (categories first, then subcategories, then nested)
         return a.level - b.level;
       });
-
-    // Debug log
-    if (results.length > 0) {
-      console.log(`🔍 Search "${query}" found ${results.length} results:`, {
-        categories: results.filter((r) => r.type === "category").length,
-        subcategories: results.filter((r) => r.type === "subcategory").length,
-        nestedSubcategories: results.filter(
-          (r) => r.type === "nestedSubcategory"
-        ).length,
-      });
-    }
 
     return results;
   }, [allCategoriesData, searchQuery]);
 
-  // Fixed: Fetch products with proper error handling and parameter validation
   const productParams = useMemo(() => {
     const params: any = {
       page: currentPage,
       limit: 12,
     };
 
-    // Priority: nested subcategory > subcategory > main category
     if (selectedNestedSubCategoryId && selectedNestedSubCategoryId > 0) {
       params.categoryId = selectedNestedSubCategoryId;
-      console.log(
-        "🔍 Fetching products for nested subcategory:",
-        selectedNestedSubCategoryId
-      );
     } else if (selectedSubCategoryId && selectedSubCategoryId > 0) {
       params.categoryId = selectedSubCategoryId;
-      console.log(
-        "🔍 Fetching products for subcategory:",
-        selectedSubCategoryId
-      );
     } else if (selectedCategoryId && selectedCategoryId > 0) {
       params.categoryId = selectedCategoryId;
-      console.log(
-        "🔍 Fetching products for main category:",
-        selectedCategoryId
-      );
     } else {
       console.log("🔍 Fetching all products");
     }
@@ -334,17 +299,6 @@ export default function StoreProducts() {
     isLoading: productsLoading = false,
     error: productsError = null,
   } = useProducts(productParams);
-
-  // Add debugging for the products response
-  useEffect(() => {
-    console.log("📦 Products response:", {
-      productsCount: products.length,
-      isLoading: productsLoading,
-      hasError: !!productsError,
-      pagination,
-      params: productParams,
-    });
-  }, [products, productsLoading, productsError, pagination, productParams]);
 
   const {
     addToCart,
@@ -568,8 +522,6 @@ export default function StoreProducts() {
     (subCategoryId: number) => {
       if (!subCategoryId || subCategoryId <= 0) return;
 
-      console.log("🎯 Subcategory clicked:", subCategoryId);
-
       if (selectedSubCategoryId === subCategoryId) {
         setSelectedSubCategoryId(null);
         setSelectedNestedSubCategoryId(null);
@@ -586,8 +538,6 @@ export default function StoreProducts() {
   const handleNestedSubCategoryClick = useCallback(
     (nestedSubCategoryId: number) => {
       if (!nestedSubCategoryId || nestedSubCategoryId <= 0) return;
-
-      console.log("🎯 Nested subcategory clicked:", nestedSubCategoryId);
       setSelectedNestedSubCategoryId(nestedSubCategoryId);
       setCurrentPage(1);
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -597,8 +547,6 @@ export default function StoreProducts() {
 
   const handleSearchResultClick = useCallback((item: any) => {
     if (!item || !item.id) return;
-
-    console.log("🎯 Search result clicked:", item);
     setCurrentPage(1);
 
     if (item.type === "category") {
@@ -626,7 +574,6 @@ export default function StoreProducts() {
   }, []);
 
   const clearFilters = useCallback(() => {
-    console.log("🧹 Clearing all filters");
     setSelectedCategoryId(null);
     setSelectedSubCategoryId(null);
     setSelectedNestedSubCategoryId(null);
@@ -661,7 +608,6 @@ export default function StoreProducts() {
 
   const handleMobileCategorySelect = useCallback(
     (categoryId: number | null) => {
-      console.log("📱 Mobile category selected:", categoryId);
       setSelectedCategoryId(categoryId);
       setSelectedSubCategoryId(null);
       setSelectedNestedSubCategoryId(null);
@@ -676,8 +622,6 @@ export default function StoreProducts() {
 
   const handleMobileSubCategorySelect = useCallback((subCategoryId: number) => {
     if (!subCategoryId || subCategoryId <= 0) return;
-
-    console.log("📱 Mobile subcategory selected:", subCategoryId);
     setSelectedSubCategoryId(subCategoryId);
     setSelectedNestedSubCategoryId(null);
     setCurrentPage(1);
@@ -688,11 +632,6 @@ export default function StoreProducts() {
   const handleMobileNestedSubCategorySelect = useCallback(
     (nestedSubCategoryId: number) => {
       if (!nestedSubCategoryId || nestedSubCategoryId <= 0) return;
-
-      console.log(
-        "📱 Mobile nested subcategory selected:",
-        nestedSubCategoryId
-      );
       setSelectedNestedSubCategoryId(nestedSubCategoryId);
       setCurrentPage(1);
       setIsMobileSidebarOpen(false);
@@ -700,21 +639,6 @@ export default function StoreProducts() {
     },
     []
   );
-
-  // Effect to log category state changes
-  useEffect(() => {
-    console.log("🏷️ Category state changed:", {
-      selectedCategoryId,
-      selectedSubCategoryId,
-      selectedNestedSubCategoryId,
-      currentPage,
-    });
-  }, [
-    selectedCategoryId,
-    selectedSubCategoryId,
-    selectedNestedSubCategoryId,
-    currentPage,
-  ]);
 
   const SidebarContent = React.memo(
     ({ isMobile = false }: { isMobile?: boolean }) => (
@@ -1011,7 +935,6 @@ export default function StoreProducts() {
       if (pagination && (page < 1 || page > pagination.pages)) {
         return;
       }
-      console.log("📄 Page changed to:", page);
       setCurrentPage(page);
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
@@ -1324,31 +1247,35 @@ export default function StoreProducts() {
                             </Button>
                           </Link>
                           <div className="flex items-center gap-1 bg-gray-50 rounded p-1">
+                            {/* Left side - Minus button (only show when quantity > 0) */}
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() =>
-                                cartQuantity === 0
-                                  ? handleAddToCart(product)
+                                cartQuantity === 1
+                                  ? handleRemoveFromCart(product)
                                   : handleUpdateCartQuantity(
                                       product,
                                       cartQuantity - 1
                                     )
                               }
                               disabled={
-                                isThisProductUpdating || isThisProductLoading
+                                isThisProductUpdating ||
+                                isThisProductLoading ||
+                                cartQuantity === 0
                               }
-                              className="h-6 w-6 p-0"
+                              className={`h-6 w-6 p-0 ${
+                                cartQuantity === 0 ? "opacity-30" : ""
+                              }`}
                             >
-                              {cartQuantity === 0 ? (
-                                <Plus className="w-3 h-3" />
-                              ) : cartQuantity === 1 ? (
+                              {cartQuantity === 1 ? (
                                 <X className="w-3 h-3" />
                               ) : (
                                 <Minus className="w-3 h-3" />
                               )}
                             </Button>
 
+                            {/* Center - Quantity display */}
                             <span className="px-2 text-sm font-medium min-w-[1.5rem] text-center">
                               {isThisProductUpdating || isThisProductLoading ? (
                                 <div className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
@@ -1357,6 +1284,7 @@ export default function StoreProducts() {
                               )}
                             </span>
 
+                            {/* Right side - Plus button (always show) */}
                             <Button
                               variant="ghost"
                               size="sm"
