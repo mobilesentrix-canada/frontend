@@ -32,8 +32,11 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
+            {/* Public Routes */}
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<Navigate to="/login" replace />} />
+
+            {/* Admin Routes */}
             <Route
               path="/admin"
               element={
@@ -43,11 +46,13 @@ const App = () => (
               }
             >
               <Route index element={<AdminDashboard />} />
-
               <Route path="stores" element={<AdminStores />} />
               <Route path="members" element={<AdminMembers />} />
               <Route path="orders" element={<AdminOrders />} />
+              <Route path="orders/:orderId" element={<UserOrderDetails />} />
             </Route>
+
+            {/* Store Routes */}
             <Route
               path="/store"
               element={
@@ -57,20 +62,15 @@ const App = () => (
               }
             >
               <Route index element={<StoreProducts />} />
+              <Route path="products" element={<StoreProducts />} />
               <Route path="product/:id" element={<ProductDetail />} />
               <Route path="cart" element={<StoreCart />} />
               <Route path="orders" element={<StoreOrders />} />
               <Route path="profile" element={<StoreProfile />} />
               <Route path="wishlist" element={<StoreWishlist />} />
             </Route>
-            <Route
-              path="/admin/orders/:orderId"
-              element={
-                <ProtectedRoute>
-                  <UserOrderDetails />
-                </ProtectedRoute>
-              }
-            />
+
+            {/* 404 Not Found */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

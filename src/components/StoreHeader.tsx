@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
-import { LogOut } from "lucide-react";
+import { LogOut, Menu } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,9 +15,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-export function StoreHeader() {
+interface StoreHeaderProps {
+  onToggleSidebar: () => void;
+}
+
+export function StoreHeader({ onToggleSidebar }: StoreHeaderProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   const handleLogoutClick = () => {
@@ -35,8 +41,17 @@ export function StoreHeader() {
 
   return (
     <>
-      <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6">
+      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-4">
+        {!isMobile && (
+          <Button variant="ghost" size="sm" onClick={onToggleSidebar}>
+            <Menu className="h-5 w-5" />
+          </Button>
+        )}
+
         <div className="flex-1">
+          <h1 className="text-lg font-semibold text-gray-900">
+            MS Store Portal
+          </h1>
           {user?.storeName && (
             <p className="text-sm text-gray-600">{user.storeName}</p>
           )}

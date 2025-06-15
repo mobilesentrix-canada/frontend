@@ -1,19 +1,22 @@
-import React from "react";
+// StoreLayout.tsx
+import React, { useState } from "react";
 import { Outlet } from "react-router-dom";
-import { StoreSidebar } from "./StoreSidebar";
-import { StoreHeader } from "./StoreHeader";
 
+import { StoreHeader } from "./StoreHeader";
+import { ResponsiveStoreSidebar } from "./ResponsiveStoreSidebar";
 export function StoreLayout() {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
+
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <div className="flex-shrink-0">
-        <StoreSidebar />
-      </div>
-      <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
-        <div className="flex-shrink-0">
-          <StoreHeader />
-        </div>
-        <main className="flex-1 overflow-auto min-h-0">
+    <div className="flex h-screen bg-gray-50">
+      <ResponsiveStoreSidebar isOpen={sidebarOpen} onToggle={toggleSidebar} />
+
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <StoreHeader onToggleSidebar={toggleSidebar} />
+
+        <main className="flex-1 overflow-auto">
           <div className="h-full w-full">
             <Outlet />
           </div>

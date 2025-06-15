@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,60 +29,39 @@ import {
   ChevronLeft,
   Search,
   Minus,
+  ArrowRight,
+  Folder,
+  FolderOpen,
 } from "lucide-react";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-
-// Material-UI imports
-import { Tabs, Tab, Box, Chip } from "@mui/material";
+import { STATIC_CATEGORIES } from "@/db";
+import { Tabs, Tab, Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
 
-// Styled MUI components
-const StyledTabs = styled(Tabs)(({ theme }) => ({
-  minHeight: 48,
-  width: "100%",
-  "& .MuiTabs-scrollButtons": {
-    "&.Mui-disabled": {
-      opacity: 0.3,
-    },
-  },
+// Simple styled tabs
+const StyledTabs = styled(Tabs)({
+  minHeight: 40,
   "& .MuiTabs-indicator": {
-    backgroundColor: "hsl(var(--primary))",
-    height: 3,
+    backgroundColor: "#dc2626",
+    height: 2,
   },
-  "& .MuiTabs-scroller": {
-    overflow: "hidden !important",
-  },
-  "& .MuiTabs-flexContainer": {
-    overflow: "hidden",
-  },
-}));
+});
 
-const StyledTab = styled(Tab)(({ theme }) => ({
+const StyledTab = styled(Tab)({
   textTransform: "none",
-  minWidth: 120,
-  maxWidth: 200,
+  minWidth: 100,
   fontWeight: 500,
   fontSize: "14px",
-  padding: "12px 16px",
-  color: "hsl(var(--muted-foreground))",
-  whiteSpace: "nowrap",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
+  color: "#6b7280",
   "&.Mui-selected": {
-    color: "hsl(var(--foreground))",
+    color: "#dc2626",
     fontWeight: 600,
   },
   "&:hover": {
-    color: "hsl(var(--foreground))",
-    backgroundColor: "hsl(var(--accent))",
+    color: "#374151",
   },
-}));
+});
 
 export default function StoreProducts() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
@@ -91,26 +70,102 @@ export default function StoreProducts() {
   const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<
     number | null
   >(null);
+  const [selectedNestedSubCategoryId, setSelectedNestedSubCategoryId] =
+    useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-
-  // Add state to track which product is being added to cart
   const [loadingProductId, setLoadingProductId] = useState<number | null>(null);
-  // Add state to track which product cart is being updated
   const [updatingProductId, setUpdatingProductId] = useState<number | null>(
     null
   );
 
   const { toast } = useToast();
 
-  const { categories, isLoading: categoriesLoading } = useCategories();
+  // Fetch subcategories
   const { subCategories, isLoading: subCategoriesLoading } = useSubCategories(
     selectedCategoryId || 0
   );
 
-  // Modified the useProducts hook call to handle the category filtering logic
+  // Fetch nested subcategories
+  const {
+    subCategories: nestedSubCategories,
+    isLoading: nestedSubCategoriesLoading,
+  } = useSubCategories(selectedSubCategoryId || 0);
+
+  // Create searchable category data
+  const allCategoryData = useMemo(() => {
+    const allData: any[] = [];
+
+    // Add main categories
+    STATIC_CATEGORIES.forEach((cat) => {
+      allData.push({
+        id: cat.entity_id,
+        name: cat.name,
+        type: "category",
+        level: 1,
+        fullPath: cat.name,
+        searchTerms: cat.name.toLowerCase(),
+      });
+    });
+
+    // Add subcategories
+    subCategories.forEach((subCat) => {
+      const parentCategory = STATIC_CATEGORIES.find(
+        (cat) => cat.entity_id === selectedCategoryId
+      );
+      if (parentCategory) {
+        allData.push({
+          id: subCat.entity_id,
+          name: subCat.name,
+          type: "subcategory",
+          level: 2,
+          fullPath: `${parentCategory.name} > ${subCat.name}`,
+          parentId: selectedCategoryId,
+          searchTerms: `${parentCategory.name} ${subCat.name}`.toLowerCase(),
+        });
+      }
+    });
+
+    // Add nested subcategories
+    nestedSubCategories.forEach((nestedSubCat) => {
+      const parentCategory = STATIC_CATEGORIES.find(
+        (cat) => cat.entity_id === selectedCategoryId
+      );
+      const parentSubCategory = subCategories.find(
+        (sub) => sub.entity_id === selectedSubCategoryId
+      );
+      if (parentCategory && parentSubCategory) {
+        allData.push({
+          id: nestedSubCat.entity_id,
+          name: nestedSubCat.name,
+          type: "nestedSubcategory",
+          level: 3,
+          fullPath: `${parentCategory.name} > ${parentSubCategory.name} > ${nestedSubCat.name}`,
+          parentId: selectedSubCategoryId,
+          grandParentId: selectedCategoryId,
+          searchTerms:
+            `${parentCategory.name} ${parentSubCategory.name} ${nestedSubCat.name}`.toLowerCase(),
+        });
+      }
+    });
+
+    return allData;
+  }, [
+    subCategories,
+    nestedSubCategories,
+    selectedCategoryId,
+    selectedSubCategoryId,
+  ]);
+
+  // Filter categories based on search
+  const filteredCategories = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const query = searchQuery.toLowerCase();
+    return allCategoryData.filter((item) => item.searchTerms.includes(query));
+  }, [allCategoryData, searchQuery]);
+
+  // Fetch products
   const {
     products,
     pagination,
@@ -119,9 +174,8 @@ export default function StoreProducts() {
   } = useProducts({
     page: currentPage,
     limit: 12,
-    // Only pass categoryId if a subcategory is selected, otherwise show all products
-    categoryId: selectedSubCategoryId || undefined,
-    // search: searchQuery || undefined,
+    categoryId:
+      selectedNestedSubCategoryId || selectedSubCategoryId || undefined,
   });
 
   const {
@@ -130,8 +184,6 @@ export default function StoreProducts() {
     cartItems,
     updateCartItem,
     removeCartItem,
-    isUpdatingCart,
-    isRemovingFromCart,
   } = useCart();
 
   const {
@@ -142,33 +194,33 @@ export default function StoreProducts() {
     isRemovingFromWishlist,
   } = useWishlist();
 
-  // Helper function to get cart item for a specific product
+  const categories = STATIC_CATEGORIES.map((cat) => ({
+    id: cat.entity_id.toString(),
+    name: cat.name,
+    has_children: cat.has_children,
+    image_url: cat.image_url,
+  }));
+
+  // Helper functions
   const getCartItemForProduct = (productId: number) => {
     return cartItems.find((item) => item.product.id === productId);
   };
 
-  // Helper function to get quantity of a product in cart
   const getProductQuantityInCart = (productId: number) => {
     const cartItem = getCartItemForProduct(productId);
     return cartItem ? cartItem.quantity : 0;
   };
 
   const handleAddToCart = (product: Product) => {
-    // Set loading state for this specific product
     setLoadingProductId(product.id);
-
     addToCart(
-      {
-        product_id: product.id,
-        quantity: 1,
-      },
+      { product_id: product.id, quantity: 1 },
       {
         onSuccess: () => {
           toast({
             title: "Added to cart",
             description: `${product.name} has been added to your cart`,
           });
-          // Clear loading state
           setLoadingProductId(null);
         },
         onError: (error: any) => {
@@ -177,7 +229,6 @@ export default function StoreProducts() {
             description: error.message || "Failed to add product to cart",
             variant: "destructive",
           });
-          // Clear loading state
           setLoadingProductId(null);
         },
       }
@@ -197,7 +248,6 @@ export default function StoreProducts() {
     }
 
     setUpdatingProductId(product.id);
-
     try {
       await updateCartItem(cartItem.id, { quantity: newQuantity });
       toast({
@@ -220,7 +270,6 @@ export default function StoreProducts() {
     if (!cartItem) return;
 
     setUpdatingProductId(product.id);
-
     try {
       await removeCartItem(cartItem.id);
       toast({
@@ -240,7 +289,6 @@ export default function StoreProducts() {
 
   const handleWishlistToggle = (product: Product) => {
     const productId = product.id;
-
     if (isInWishlist(productId)) {
       removeFromWishlist(productId, {
         onSuccess: () => {
@@ -286,27 +334,66 @@ export default function StoreProducts() {
     if (newValue === "all") {
       setSelectedCategoryId(null);
       setSelectedSubCategoryId(null);
+      setSelectedNestedSubCategoryId(null);
       setExpandedCategory(null);
     } else {
       const numCategoryId = parseInt(newValue);
       setSelectedCategoryId(numCategoryId);
       setSelectedSubCategoryId(null);
+      setSelectedNestedSubCategoryId(null);
       setExpandedCategory(newValue);
     }
-
     setCurrentPage(1);
+    setSearchQuery("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleSubCategoryClick = (subCategoryId: number) => {
-    setSelectedSubCategoryId(subCategoryId);
+    if (selectedSubCategoryId === subCategoryId) {
+      setSelectedSubCategoryId(null);
+      setSelectedNestedSubCategoryId(null);
+    } else {
+      setSelectedSubCategoryId(subCategoryId);
+      setSelectedNestedSubCategoryId(null);
+    }
     setCurrentPage(1);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleNestedSubCategoryClick = (nestedSubCategoryId: number) => {
+    setSelectedNestedSubCategoryId(nestedSubCategoryId);
+    setCurrentPage(1);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleSearchResultClick = (item: any) => {
+    setSearchQuery("");
+    setCurrentPage(1);
+
+    if (item.type === "category") {
+      setSelectedCategoryId(item.id);
+      setSelectedSubCategoryId(null);
+      setSelectedNestedSubCategoryId(null);
+      setExpandedCategory(item.id.toString());
+    } else if (item.type === "subcategory") {
+      setSelectedCategoryId(item.parentId);
+      setSelectedSubCategoryId(item.id);
+      setSelectedNestedSubCategoryId(null);
+      setExpandedCategory(item.parentId?.toString());
+    } else if (item.type === "nestedSubcategory") {
+      setSelectedCategoryId(item.grandParentId);
+      setSelectedSubCategoryId(item.parentId);
+      setSelectedNestedSubCategoryId(item.id);
+      setExpandedCategory(item.grandParentId?.toString());
+    }
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const clearFilters = () => {
     setSelectedCategoryId(null);
     setSelectedSubCategoryId(null);
+    setSelectedNestedSubCategoryId(null);
     setExpandedCategory(null);
     setSearchQuery("");
     setCurrentPage(1);
@@ -316,40 +403,12 @@ export default function StoreProducts() {
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value);
     setCurrentPage(1);
-    // Clear category selection when searching
-    if (e.target.value) {
-      setSelectedCategoryId(null);
-      setSelectedSubCategoryId(null);
-      setExpandedCategory(null);
-    }
-  };
-
-  const getSelectedCategoryName = () => {
-    if (selectedSubCategoryId) {
-      const subCategory = subCategories.find(
-        (sub) => sub.entity_id === selectedSubCategoryId
-      );
-      if (subCategory) {
-        const parentCategory = categories.find(
-          (cat) => parseInt(cat.id) === selectedCategoryId
-        );
-        return `${parentCategory?.name} > ${subCategory.name}`;
-      }
-    }
-    if (selectedCategoryId) {
-      const category = categories.find(
-        (cat) => parseInt(cat.id) === selectedCategoryId
-      );
-      return category?.name;
-    }
-    return null;
   };
 
   const handlePageChange = (page: number) => {
     if (pagination && (page < 1 || page > pagination.pages)) {
       return;
     }
-
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -414,406 +473,306 @@ export default function StoreProducts() {
   }
 
   return (
-    <div className="px-4 py-6 w-full max-w-full overflow-x-hidden">
-      {/* Header Section */}
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex-1 min-w-0">
-          <h1 className="text-3xl font-bold text-gray-900">Products</h1>
-          <p className="text-gray-600 mt-2">Browse our product catalog</p>
-          {pagination && (
-            <p className="text-sm text-gray-500 mt-1">
-              Showing {(currentPage - 1) * 12 + 1}-
-              {Math.min(currentPage * 12, pagination.total || 0)} of{" "}
-              {pagination.total || 0} products
-            </p>
+    <div className="flex h-full bg-gray-50">
+      {/* Simple Left Sidebar */}
+      <div className="w-64 bg-white border-r border-gray-200 flex-shrink-0">
+        <div className="p-4">
+          <h2 className="font-semibold text-gray-900 mb-4">Categories</h2>
+
+          {/* Search */}
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Input
+              type="text"
+              placeholder="Search categories..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+              className="pl-10 h-10 text-sm"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Search Results */}
+          {searchQuery && filteredCategories.length > 0 && (
+            <div className="mb-4 max-h-64 overflow-y-auto">
+              <div className="text-xs text-gray-500 mb-2">Search Results</div>
+              {filteredCategories.map((item) => (
+                <div
+                  key={`${item.type}-${item.id}`}
+                  onClick={() => handleSearchResultClick(item)}
+                  className="p-2 hover:bg-gray-50 rounded cursor-pointer text-sm"
+                >
+                  <div className="font-medium text-gray-900">{item.name}</div>
+                  <div className="text-xs text-gray-500">{item.fullPath}</div>
+                </div>
+              ))}
+            </div>
           )}
-        </div>
-        <div className="flex-shrink-0 ml-4">
-          <Link to="/store/cart">
-            <Button variant="outline" className="relative">
-              <ShoppingCart className="w-4 h-4 mr-2" />
-              Cart
-              {cartCount > 0 && (
-                <Badge className="ml-2 bg-red-500 text-white rounded-full px-2 py-1 text-xs">
-                  {cartCount}
-                </Badge>
-              )}
-            </Button>
-          </Link>
+
+          {/* Category List */}
+          {!searchQuery && (
+            <div className="space-y-1">
+              <div
+                onClick={() => clearFilters()}
+                className={cn(
+                  "p-2 rounded cursor-pointer text-sm",
+                  !selectedCategoryId
+                    ? "bg-red-50 text-red-700 font-medium"
+                    : "text-gray-700 hover:bg-gray-50"
+                )}
+              >
+                All Categories
+              </div>
+
+              {categories.map((category) => (
+                <div key={category.id}>
+                  <div
+                    onClick={() => handleCategoryChange({} as any, category.id)}
+                    className={cn(
+                      "p-2 rounded cursor-pointer text-sm flex items-center justify-between",
+                      selectedCategoryId?.toString() === category.id
+                        ? "bg-red-50 text-red-700 font-medium"
+                        : "text-gray-700 hover:bg-gray-50"
+                    )}
+                  >
+                    <span>{category.name}</span>
+                    {category.has_children &&
+                      selectedCategoryId?.toString() === category.id && (
+                        <ChevronDown className="w-4 h-4" />
+                      )}
+                  </div>
+
+                  {/* Subcategories */}
+                  {selectedCategoryId?.toString() === category.id && (
+                    <div className="ml-4 mt-1 space-y-1">
+                      {subCategoriesLoading ? (
+                        <div className="space-y-1">
+                          {[1, 2, 3].map((i) => (
+                            <Skeleton key={i} className="h-8 w-full" />
+                          ))}
+                        </div>
+                      ) : (
+                        subCategories.map((subCat) => (
+                          <div key={subCat.entity_id}>
+                            <div
+                              onClick={() =>
+                                handleSubCategoryClick(subCat.entity_id)
+                              }
+                              className={cn(
+                                "p-1.5 rounded cursor-pointer text-sm flex items-center justify-between",
+                                selectedSubCategoryId === subCat.entity_id
+                                  ? "bg-red-50 text-red-700 font-medium"
+                                  : "text-gray-600 hover:bg-gray-50"
+                              )}
+                            >
+                              <span>{subCat.name}</span>
+                              {subCat.has_children &&
+                                selectedSubCategoryId === subCat.entity_id && (
+                                  <ChevronDown className="w-3 h-3" />
+                                )}
+                            </div>
+
+                            {/* Nested Subcategories */}
+                            {selectedSubCategoryId === subCat.entity_id && (
+                              <div className="ml-4 mt-1 space-y-1">
+                                {nestedSubCategoriesLoading ? (
+                                  <div className="space-y-1">
+                                    {[1, 2].map((i) => (
+                                      <Skeleton
+                                        key={i}
+                                        className="h-6 w-full"
+                                      />
+                                    ))}
+                                  </div>
+                                ) : (
+                                  nestedSubCategories.map((nestedSubCat) => (
+                                    <div
+                                      key={nestedSubCat.entity_id}
+                                      onClick={() =>
+                                        handleNestedSubCategoryClick(
+                                          nestedSubCat.entity_id
+                                        )
+                                      }
+                                      className={cn(
+                                        "p-1 rounded cursor-pointer text-xs",
+                                        selectedNestedSubCategoryId ===
+                                          nestedSubCat.entity_id
+                                          ? "bg-red-50 text-red-700 font-medium"
+                                          : "text-gray-600 hover:bg-gray-50"
+                                      )}
+                                    >
+                                      {nestedSubCat.name}
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Search Bar */}
-
-      {/* Categories Section */}
-      <Card className="mb-6 w-full max-w-full">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Grid3X3 className="w-5 h-5" />
-              Categories
-            </CardTitle>
-            {(selectedCategoryId || selectedSubCategoryId || searchQuery) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearFilters}
-                className="text-gray-500 hover:text-gray-700 flex-shrink-0"
-              >
-                <X className="w-4 h-4 mr-1" />
-                Clear Filters
-              </Button>
-            )}
-          </div>
-          {(getSelectedCategoryName() || searchQuery) && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm text-gray-600">Active filters:</span>
-              {getSelectedCategoryName() && (
-                <Badge variant="secondary" className="w-fit">
-                  {getSelectedCategoryName()}
-                </Badge>
-              )}
-              {searchQuery && (
-                <Badge variant="secondary" className="w-fit">
-                  Search: "{searchQuery}"
-                </Badge>
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-auto">
+        <div className="p-6">
+          {/* Header */}
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Products</h1>
+              {pagination && (
+                <p className="text-sm text-gray-500 mt-1">
+                  Showing {(currentPage - 1) * 12 + 1}-
+                  {Math.min(currentPage * 12, pagination.total || 0)} of{" "}
+                  {pagination.total || 0} products
+                </p>
               )}
             </div>
-          )}
-        </CardHeader>
-        <CardContent className="w-full max-w-full overflow-hidden">
-          {categoriesLoading ? (
-            <div className="flex gap-3 flex-wrap">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <Skeleton key={i} className="h-10 w-32" />
+            <Link to="/store/cart">
+              <Button variant="outline" className="relative">
+                <ShoppingCart className="w-4 h-4 mr-2" />
+                Cart
+                {cartCount > 0 && (
+                  <Badge className="ml-2 bg-red-500 text-white rounded-full px-2 py-1 text-xs">
+                    {cartCount}
+                  </Badge>
+                )}
+              </Button>
+            </Link>
+          </div>
+
+          {/* Products Grid */}
+          {productsLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                <Card key={i} className="overflow-hidden">
+                  <Skeleton className="aspect-square w-full" />
+                  <CardHeader>
+                    <Skeleton className="h-6 w-3/4" />
+                    <Skeleton className="h-4 w-full" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex justify-between items-center">
+                      <Skeleton className="h-8 w-20" />
+                      <Skeleton className="h-8 w-20" />
+                    </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
-          ) : (
-            <div className="space-y-4">
-              {/* MUI Scrollable Tabs for Categories */}
-              <Box
-                sx={{
-                  borderBottom: 1,
-                  borderColor: "divider",
-                  width: "100%",
-                  overflow: "hidden",
-                }}
-              >
-                <StyledTabs
-                  value={selectedCategoryId?.toString() || "all"}
-                  onChange={handleCategoryChange}
-                  variant="scrollable"
-                  scrollButtons="auto"
-                  allowScrollButtonsMobile
-                  aria-label="category tabs"
-                  sx={{
-                    width: "100%",
-                    "& .MuiTabs-scroller": {
-                      overflow: "hidden !important",
-                    },
-                    "& .MuiTabs-flexContainer": {
-                      overflow: "hidden",
-                    },
-                  }}
-                >
-                  <StyledTab label="All Categories" value="all" />
-                  {categories.map((category) => (
-                    <StyledTab
-                      key={category.id}
-                      label={
-                        <Box
-                          sx={{ display: "flex", alignItems: "center", gap: 1 }}
-                        >
-                          {category.name}
-                          {category.has_children && (
-                            <ChevronDown
-                              className={cn(
-                                "w-4 h-4 transition-transform",
-                                expandedCategory === category.id && "rotate-180"
-                              )}
-                            />
-                          )}
-                        </Box>
-                      }
-                      value={category.id}
-                    />
-                  ))}
-                </StyledTabs>
-              </Box>
+          ) : products.length > 0 ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {products.map((product) => {
+                  const isThisProductLoading = loadingProductId === product.id;
+                  const isThisProductUpdating =
+                    updatingProductId === product.id;
+                  const cartQuantity = getProductQuantityInCart(product.id);
+                  const isInCart = cartQuantity > 0;
 
-              {selectedCategoryId && (
-                <div className="border-t pt-6">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-4">
-                    {
-                      categories.find(
-                        (cat) => parseInt(cat.id) === selectedCategoryId
-                      )?.name
-                    }
-                  </h3>
-                  <div className="mb-6">
-                    <div className="relative max-w-md">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                      <Input
-                        type="text"
-                        placeholder="What are you looking for?"
-                        value={searchQuery}
-                        onChange={handleSearchChange}
-                        className="pl-10 pr-10"
-                      />
-                      {searchQuery && (
-                        <button
-                          onClick={() => {
-                            setSearchQuery("");
-                            setCurrentPage(1);
-                          }}
-                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  return (
+                    <Card
+                      key={product.id}
+                      className="hover:shadow-lg transition-shadow overflow-hidden"
+                    >
+                      <div className="aspect-square relative overflow-hidden bg-gray-50">
+                        {product.image ? (
+                          <img
+                            src={product.image}
+                            alt={product.name}
+                            className="w-full h-full object-contain hover:scale-105 transition-transform duration-300"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = "none";
+                              const fallback =
+                                target.nextElementSibling as HTMLElement;
+                              if (fallback) {
+                                fallback.style.display = "flex";
+                              }
+                            }}
+                          />
+                        ) : null}
+
+                        <div
+                          className={`w-full h-full flex items-center justify-center ${
+                            product.image ? "hidden" : "flex"
+                          }`}
                         >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {subCategoriesLoading ? (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-                      {[1, 2, 3, 4, 5, 6].map((i) => (
-                        <Card key={i} className="p-4">
-                          <Skeleton className="w-full h-20 mb-3" />
-                          <Skeleton className="h-4 w-3/4" />
-                        </Card>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-                      {subCategories.map((subCategory) => (
-                        <Card
-                          key={subCategory.entity_id}
+                          <div className="text-center p-4">
+                            <div className="w-16 h-16 mx-auto mb-2 bg-white rounded-full flex items-center justify-center shadow-sm">
+                              <Grid3X3 className="w-8 h-8 text-gray-400" />
+                            </div>
+                            <p className="text-xs text-gray-500 font-medium">
+                              {product.manufacturer}
+                            </p>
+                          </div>
+                        </div>
+
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           className={cn(
-                            "cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-105",
-                            selectedSubCategoryId === subCategory.entity_id
-                              ? "ring-2 ring-primary bg-primary/5"
-                              : "hover:bg-gray-50"
+                            "absolute top-2 left-2 h-8 w-8 p-0 rounded-full bg-white shadow-sm",
+                            isInWishlist(product.id) && "text-red-500"
                           )}
-                          onClick={() =>
-                            handleSubCategoryClick(subCategory.entity_id)
+                          onClick={() => handleWishlistToggle(product)}
+                          disabled={
+                            isAddingToWishlist || isRemovingFromWishlist
                           }
                         >
-                          <CardContent className="p-4 text-center">
-                            <div className="w-full h-16 mb-3 flex items-center justify-center bg-gray-100 rounded-lg overflow-hidden">
-                              {subCategory.image_url ? (
-                                <img
-                                  src={subCategory.image_url}
-                                  alt={subCategory.name}
-                                  className="w-full h-full object-contain"
-                                  onError={(e) => {
-                                    console.log(
-                                      "Image failed to load:",
-                                      subCategory.image_url
-                                    );
-                                    e.currentTarget.style.display = "none";
-                                    const fallback = e.currentTarget
-                                      .nextElementSibling as HTMLElement;
-                                    if (fallback) {
-                                      fallback.style.display = "flex";
-                                    }
-                                  }}
-                                />
-                              ) : null}
-                              <div
-                                className={`w-full h-full flex items-center justify-center ${
-                                  subCategory.image_url ? "hidden" : "flex"
-                                }`}
-                                style={{
-                                  display: subCategory.image_url
-                                    ? "none"
-                                    : "flex",
-                                }}
-                              >
-                                <Grid3X3 className="w-8 h-8 text-gray-400" />
-                              </div>
-                            </div>
-                            <h4 className="font-medium text-sm text-gray-900 mb-1 line-clamp-2">
-                              {subCategory.name}
-                            </h4>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                  <div className="mt-6 text-center">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setSelectedCategoryId(null);
-                        setSelectedSubCategoryId(null);
-                        setExpandedCategory(null);
-                        setCurrentPage(1);
-                      }}
-                    >
-                      View all{" "}
-                      {
-                        categories.find(
-                          (cat) => parseInt(cat.id) === selectedCategoryId
-                        )?.name
-                      }{" "}
-                      products
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                          <Heart
+                            className={cn(
+                              "w-4 h-4",
+                              isInWishlist(product.id) && "fill-current"
+                            )}
+                          />
+                        </Button>
 
-      {/* Products Grid - Now always visible */}
-      <>
-        {productsLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-              <Card key={i} className="overflow-hidden">
-                <Skeleton className="aspect-square w-full" />
-                <CardHeader>
-                  <Skeleton className="h-6 w-3/4" />
-                  <Skeleton className="h-4 w-full" />
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <Skeleton className="h-8 w-20" />
-                      <Skeleton className="h-4 w-16 mt-1" />
-                    </div>
-                    <div className="flex gap-2">
-                      <Skeleton className="h-8 w-20" />
-                      <Skeleton className="h-8 w-20" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : products.length > 0 ? (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
-              {products.map((product) => {
-                // Check if this specific product is loading
-                const isThisProductLoading = loadingProductId === product.id;
-                const isThisProductUpdating = updatingProductId === product.id;
-                const cartQuantity = getProductQuantityInCart(product.id);
-                const isInCart = cartQuantity > 0;
-
-                return (
-                  <Card
-                    key={product.id}
-                    className="hover:shadow-lg transition-all duration-300 overflow-hidden group"
-                  >
-                    <div className="aspect-square relative overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
-                      {product.image ? (
-                        <img
-                          src={product.image}
-                          alt={product.name}
-                          style={{ objectFit: "contain" }}
-                          className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = "none";
-                            const fallback =
-                              target.nextElementSibling as HTMLElement;
-                            if (fallback) {
-                              fallback.style.display = "flex";
-                            }
-                          }}
-                        />
-                      ) : null}
-
-                      <div
-                        className={`w-full h-full flex items-center justify-center ${
-                          product.image ? "hidden" : "flex"
-                        }`}
-                        style={{ display: product.image ? "none" : "flex" }}
-                      >
-                        <div className="text-center p-4">
-                          <div className="w-20 h-20 mx-auto mb-3 bg-white rounded-full flex items-center justify-center shadow-sm">
-                            <Grid3X3 className="w-10 h-10 text-gray-400" />
+                        {isInCart && (
+                          <div className="absolute bottom-2 right-2">
+                            <Badge className="bg-green-500 text-white text-xs">
+                              {cartQuantity} in cart
+                            </Badge>
                           </div>
-                          <p className="text-xs text-gray-500 font-medium">
-                            {product.manufacturer}
-                          </p>
-                          <p className="text-xs text-gray-400">
-                            {product.model}
-                          </p>
-                        </div>
+                        )}
                       </div>
 
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className={cn(
-                          "absolute top-3 left-3 h-9 w-9 p-0 rounded-full bg-white/95 hover:bg-white shadow-sm",
-                          "transition-all duration-200 hover:scale-110",
-                          isInWishlist(product.id) && "text-red-500 bg-red-50"
-                        )}
-                        onClick={() => handleWishlistToggle(product)}
-                        disabled={isAddingToWishlist || isRemovingFromWishlist}
-                      >
-                        <Heart
-                          className={cn(
-                            "w-4 h-4 transition-all",
-                            isInWishlist(product.id) && "fill-current scale-110"
-                          )}
-                        />
-                      </Button>
-                      {product?.manufacturer && (
-                        <Badge className="absolute top-3 right-3 bg-white text-gray-900 shadow-sm">
-                          {product.manufacturer}
-                        </Badge>
-                      )}
-                      {product?.badges?.length > 0 && (
-                        <div className="absolute bottom-3 left-3 flex flex-wrap gap-1">
-                          <Badge className="bg-blue-500 text-white shadow-sm text-xs">
-                            {product?.badges}
-                          </Badge>
-                        </div>
-                      )}
-
-                      {/* Cart quantity indicator */}
-                      {isInCart && (
-                        <div className="absolute bottom-3 right-3">
-                          <Badge className="bg-green-500 text-white shadow-sm">
-                            {cartQuantity} in cart
-                          </Badge>
-                        </div>
-                      )}
-                    </div>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-lg leading-tight line-clamp-2">
-                        {product.name}
-                      </CardTitle>
-
-                      {product.sku && (
-                        <div className="flex gap-1 flex-wrap">
-                          <Badge variant="outline" className="text-xs">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm leading-tight line-clamp-2">
+                          {product.name}
+                        </CardTitle>
+                        {product.sku && (
+                          <Badge variant="outline" className="text-xs w-fit">
                             SKU: {product.sku}
                           </Badge>
-                          {product.model && (
-                            <Badge variant="outline" className="text-xs">
-                              {product.model}
-                            </Badge>
-                          )}
-                        </div>
-                      )}
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex justify-between items-end">
-                        <div></div>
+                        )}
+                      </CardHeader>
 
-                        {/* Cart Controls */}
+                      <CardContent>
                         <div className="flex gap-2 items-center">
                           <Link to={`/store/product/${product.id}`}>
-                            <Button variant="outline" size="sm">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs"
+                            >
                               View
                             </Button>
                           </Link>
-                          <div className="flex items-center gap-1 bg-gray-50 rounded-lg p-1">
+                          <div className="flex items-center gap-1 bg-gray-50 rounded p-1">
                             <Button
                               variant="ghost"
                               size="sm"
@@ -828,7 +787,7 @@ export default function StoreProducts() {
                               disabled={
                                 isThisProductUpdating || isThisProductLoading
                               }
-                              className="h-8 w-8 p-0 hover:bg-gray-200"
+                              className="h-6 w-6 p-0"
                             >
                               {cartQuantity === 0 ? (
                                 <Plus className="w-3 h-3" />
@@ -839,7 +798,7 @@ export default function StoreProducts() {
                               )}
                             </Button>
 
-                            <span className="px-3 py-1 text-sm font-medium min-w-[2rem] text-center">
+                            <span className="px-2 text-sm font-medium min-w-[1.5rem] text-center">
                               {isThisProductUpdating || isThisProductLoading ? (
                                 <div className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
                               ) : (
@@ -864,102 +823,84 @@ export default function StoreProducts() {
                                 cartQuantity >= 99 ||
                                 product.status === 0
                               }
-                              className="h-8 w-8 p-0 hover:bg-gray-200"
+                              className="h-6 w-6 p-0"
                             >
                               <Plus className="w-3 h-3" />
                             </Button>
                           </div>
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
 
-            {pagination && pagination.pages > 1 && (
-              <Card className="mt-8">
-                <CardContent className="p-4">
-                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                    <div className="text-sm text-gray-600">
-                      Page {currentPage} of {pagination.pages}
-                      {pagination.total && (
-                        <span className="ml-2">
-                          ({pagination.total} total products)
-                        </span>
-                      )}
-                    </div>
+              {/* Simple Pagination */}
+              {pagination && pagination.pages > 1 && (
+                <div className="mt-8 flex justify-center">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
 
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handlePageChange(currentPage - 1)}
-                        disabled={currentPage === 1}
-                        className="flex items-center gap-1"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                        Previous
-                      </Button>
-
-                      <div className="flex gap-1">
-                        {generatePaginationNumbers().map((page, index) => {
-                          if (page === "...") {
-                            return (
-                              <span
-                                key={`ellipsis-${index}`}
-                                className="px-3 py-2 text-gray-500"
-                              >
-                                ...
-                              </span>
-                            );
-                          }
-
-                          const pageNum = page as number;
+                    <div className="flex gap-1">
+                      {generatePaginationNumbers().map((page, index) => {
+                        if (page === "...") {
                           return (
-                            <Button
-                              key={pageNum}
-                              variant={
-                                currentPage === pageNum ? "default" : "outline"
-                              }
-                              size="sm"
-                              onClick={() => handlePageChange(pageNum)}
-                              className="min-w-[40px]"
+                            <span
+                              key={`ellipsis-${index}`}
+                              className="px-3 py-2 text-gray-500"
                             >
-                              {pageNum}
-                            </Button>
+                              ...
+                            </span>
                           );
-                        })}
-                      </div>
+                        }
 
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handlePageChange(currentPage + 1)}
-                        disabled={currentPage === pagination.pages}
-                        className="flex items-center gap-1"
-                      >
-                        Next
-                        <ChevronRight className="w-4 h-4" />
-                      </Button>
+                        const pageNum = page as number;
+                        return (
+                          <Button
+                            key={pageNum}
+                            variant={
+                              currentPage === pageNum ? "default" : "outline"
+                            }
+                            size="sm"
+                            onClick={() => handlePageChange(pageNum)}
+                            className="min-w-[32px]"
+                          >
+                            {pageNum}
+                          </Button>
+                        );
+                      })}
                     </div>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage === pagination.pages}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
                   </div>
-                </CardContent>
-              </Card>
-            )}
-          </>
-        ) : (
-          <div className="text-center py-12">
-            <Grid3X3 className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-            <p className="text-gray-500 text-lg">No products found</p>
-            {(selectedCategoryId || selectedSubCategoryId || searchQuery) && (
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-center py-12">
+              <Grid3X3 className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+              <p className="text-gray-500 text-lg">No products found</p>
               <Button variant="outline" onClick={clearFilters} className="mt-4">
                 Clear Filters
               </Button>
-            )}
-          </div>
-        )}
-      </>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
