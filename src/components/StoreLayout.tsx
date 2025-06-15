@@ -5,7 +5,7 @@ import { Outlet } from "react-router-dom";
 import { StoreHeader } from "./StoreHeader";
 import { ResponsiveStoreSidebar } from "./ResponsiveStoreSidebar";
 export function StoreLayout() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
 

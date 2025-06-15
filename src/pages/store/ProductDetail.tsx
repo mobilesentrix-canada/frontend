@@ -182,7 +182,7 @@ export default function ProductDetail() {
   const renderDescription = (description: string) => {
     const listItems = parseDescription(description);
 
-    if (listItems && listItems.length > 0) {
+    if (listItems && listItems?.length > 0) {
       return (
         <div className="space-y-3">
           <div className="flex items-center gap-2 mb-3">
@@ -192,7 +192,7 @@ export default function ProductDetail() {
             </span>
           </div>
           <ul className="space-y-2">
-            {listItems.map((item, index) => (
+            {listItems?.map((item, index) => (
               <li key={index} className="flex items-start gap-3 text-gray-700">
                 <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
                 <span className="leading-relaxed">{item}</span>
@@ -205,8 +205,10 @@ export default function ProductDetail() {
 
     return (
       <p className="text-gray-700 leading-relaxed">
-        {description ||
-          `${product?.manufacturer} ${product?.model} - High-quality product with excellent specifications.`}
+        {description
+          ? description
+          : `${product?.manufacturer ?? ""} ${product?.model ?? ""}`.trim() ||
+            "High-quality product with excellent specifications."}
       </p>
     );
   };

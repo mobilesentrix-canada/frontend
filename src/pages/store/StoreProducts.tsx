@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,7 +44,14 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { STATIC_CATEGORIES } from "@/db";
-import { Tabs, Tab, Box } from "@mui/material";
+import {
+  Tabs,
+  Tab,
+  Box,
+  TextField,
+  InputAdornment,
+  IconButton,
+} from "@mui/material";
 import { styled } from "@mui/material/styles";
 import {
   Sheet,
@@ -90,63 +103,58 @@ export default function StoreProducts() {
   );
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
+  // Refs to maintain focus
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
+
   const { toast } = useToast();
 
-  // Fetch subcategories
-  const { subCategories, isLoading: subCategoriesLoading } = useSubCategories(
-    selectedCategoryId || 0
+  // Fixed: Use conditional hooks with proper error handling
+  const allCategoryHooks = STATIC_CATEGORIES.map((category) => {
+    try {
+      return useSubCategories(category.entity_id);
+    } catch (error) {
+      console.error(
+        `Error fetching subcategories for category ${category.entity_id}:`,
+        error
+      );
+      return { subCategories: [], isLoading: false, error };
+    }
+  });
+
+  // Store additional nested categories data as users explore
+  const [additionalNestedData, setAdditionalNestedData] = useState<any[]>([]);
+
+  // Get currently selected category data for UI display
+  const selectedCategoryData = allCategoryHooks.find(
+    (_, index) => STATIC_CATEGORIES[index].entity_id === selectedCategoryId
+  );
+  const subCategories = selectedCategoryData?.subCategories || [];
+  const subCategoriesLoading = selectedCategoryData?.isLoading || false;
+
+  // Fixed: Only fetch nested subcategories when we have a valid selectedSubCategoryId
+  const {
+    subCategories: nestedSubCategories = [],
+    isLoading: nestedSubCategoriesLoading = false,
+    error: nestedSubCategoriesError = null,
+  } = useSubCategories(
+    selectedSubCategoryId && selectedSubCategoryId > 0
+      ? selectedSubCategoryId
+      : null
   );
 
-  // Fetch nested subcategories
-  const {
-    subCategories: nestedSubCategories,
-    isLoading: nestedSubCategoriesLoading,
-  } = useSubCategories(selectedSubCategoryId || 0);
-
-  // Create searchable category data
-  const allCategoryData = useMemo(() => {
-    const allData: any[] = [];
-
-    // Add main categories
-    STATIC_CATEGORIES.forEach((cat) => {
-      allData.push({
-        id: cat.entity_id,
-        name: cat.name,
-        type: "category",
-        level: 1,
-        fullPath: cat.name,
-        searchTerms: cat.name.toLowerCase(),
-      });
-    });
-
-    // Add subcategories
-    subCategories.forEach((subCat) => {
-      const parentCategory = STATIC_CATEGORIES.find(
-        (cat) => cat.entity_id === selectedCategoryId
-      );
-      if (parentCategory) {
-        allData.push({
-          id: subCat.entity_id,
-          name: subCat.name,
-          type: "subcategory",
-          level: 2,
-          fullPath: `${parentCategory.name} > ${subCat.name}`,
-          parentId: selectedCategoryId,
-          searchTerms: `${parentCategory.name} ${subCat.name}`.toLowerCase(),
-        });
-      }
-    });
-
-    // Add nested subcategories
-    nestedSubCategories.forEach((nestedSubCat) => {
+  // Add nested subcategories to additional data when they're loaded
+  useEffect(() => {
+    if (selectedSubCategoryId && nestedSubCategories.length > 0) {
       const parentCategory = STATIC_CATEGORIES.find(
         (cat) => cat.entity_id === selectedCategoryId
       );
       const parentSubCategory = subCategories.find(
         (sub) => sub.entity_id === selectedSubCategoryId
       );
+
       if (parentCategory && parentSubCategory) {
-        allData.push({
+        const newNestedData = nestedSubCategories.map((nestedSubCat) => ({
           id: nestedSubCat.entity_id,
           name: nestedSubCat.name,
           type: "nestedSubcategory",
@@ -156,42 +164,192 @@ export default function StoreProducts() {
           grandParentId: selectedCategoryId,
           searchTerms:
             `${parentCategory.name} ${parentSubCategory.name} ${nestedSubCat.name}`.toLowerCase(),
+          description: `Nested Subcategory: ${nestedSubCat.name} in ${parentSubCategory.name}`,
+          parent: `${parentCategory.name} > ${parentSubCategory.name}`,
+        }));
+
+        setAdditionalNestedData((prev) => {
+          // Remove existing nested subcategories for this subcategory and add new ones
+          const filtered = prev.filter(
+            (item) => item.parentId !== selectedSubCategoryId
+          );
+          return [...filtered, ...newNestedData];
+        });
+      }
+    }
+  }, [
+    selectedSubCategoryId,
+    nestedSubCategories,
+    subCategories,
+    selectedCategoryId,
+  ]);
+
+  // Build comprehensive search data from all hook results
+  const allCategoriesData = useMemo(() => {
+    const allData: any[] = [];
+
+    // Add main categories first
+    STATIC_CATEGORIES.forEach((cat) => {
+      allData.push({
+        id: cat.entity_id,
+        name: cat.name,
+        type: "category",
+        level: 1,
+        fullPath: cat.name,
+        searchTerms: cat.name.toLowerCase(),
+        description: `Category: ${cat.name}`,
+        parent: null,
+        parentId: null,
+        grandParentId: null,
+      });
+    });
+
+    // Add subcategories from all categories with error handling
+    STATIC_CATEGORIES.forEach((category, index) => {
+      const hookData = allCategoryHooks[index];
+      if (hookData && !hookData.error && hookData.subCategories) {
+        hookData.subCategories.forEach((subCat: any) => {
+          allData.push({
+            id: subCat.entity_id,
+            name: subCat.name,
+            type: "subcategory",
+            level: 2,
+            fullPath: `${category.name} > ${subCat.name}`,
+            parentId: category.entity_id,
+            grandParentId: null,
+            searchTerms: `${category.name} ${subCat.name}`.toLowerCase(),
+            description: `Subcategory: ${subCat.name} in ${category.name}`,
+            parent: category.name,
+          });
         });
       }
     });
 
-    return allData;
-  }, [
-    subCategories,
-    nestedSubCategories,
-    selectedCategoryId,
-    selectedSubCategoryId,
-  ]);
+    // Add nested subcategories that have been loaded through navigation
+    allData.push(...additionalNestedData);
 
-  // Filter categories based on search
+    console.log(`📊 Search data contains ${allData.length} items:`, {
+      categories: allData.filter((item) => item.type === "category").length,
+      subcategories: allData.filter((item) => item.type === "subcategory")
+        .length,
+      nestedSubcategories: allData.filter(
+        (item) => item.type === "nestedSubcategory"
+      ).length,
+    });
+
+    return allData;
+  }, [allCategoryHooks, additionalNestedData]);
+
+  // Simple and comprehensive search filter
   const filteredCategories = useMemo(() => {
     if (!searchQuery.trim()) return [];
-    const query = searchQuery.toLowerCase();
-    return allCategoryData.filter((item) => item.searchTerms.includes(query));
-  }, [allCategoryData, searchQuery]);
 
-  // Fetch products
+    const query = searchQuery.toLowerCase().trim();
+    const words = query.split(" ").filter((word) => word.length > 0);
+
+    // Search through ALL available data
+    const results = allCategoriesData
+      .filter((item) => {
+        // Check if any search word matches the item
+        return words.some(
+          (word) =>
+            item.searchTerms.includes(word) ||
+            item.name.toLowerCase().includes(word)
+        );
+      })
+      .sort((a, b) => {
+        // Sort by relevance: exact matches first, then by level
+        const aExactMatch = a.name.toLowerCase() === query;
+        const bExactMatch = b.name.toLowerCase() === query;
+
+        if (aExactMatch && !bExactMatch) return -1;
+        if (!aExactMatch && bExactMatch) return 1;
+
+        // Then sort by name match at the beginning
+        const aStartsWithQuery = a.name.toLowerCase().startsWith(query);
+        const bStartsWithQuery = b.name.toLowerCase().startsWith(query);
+
+        if (aStartsWithQuery && !bStartsWithQuery) return -1;
+        if (!aStartsWithQuery && bStartsWithQuery) return 1;
+
+        // Finally sort by level (categories first, then subcategories, then nested)
+        return a.level - b.level;
+      });
+
+    // Debug log
+    if (results.length > 0) {
+      console.log(`🔍 Search "${query}" found ${results.length} results:`, {
+        categories: results.filter((r) => r.type === "category").length,
+        subcategories: results.filter((r) => r.type === "subcategory").length,
+        nestedSubcategories: results.filter(
+          (r) => r.type === "nestedSubcategory"
+        ).length,
+      });
+    }
+
+    return results;
+  }, [allCategoriesData, searchQuery]);
+
+  // Fixed: Fetch products with proper error handling and parameter validation
+  const productParams = useMemo(() => {
+    const params: any = {
+      page: currentPage,
+      limit: 12,
+    };
+
+    // Priority: nested subcategory > subcategory > main category
+    if (selectedNestedSubCategoryId && selectedNestedSubCategoryId > 0) {
+      params.categoryId = selectedNestedSubCategoryId;
+      console.log(
+        "🔍 Fetching products for nested subcategory:",
+        selectedNestedSubCategoryId
+      );
+    } else if (selectedSubCategoryId && selectedSubCategoryId > 0) {
+      params.categoryId = selectedSubCategoryId;
+      console.log(
+        "🔍 Fetching products for subcategory:",
+        selectedSubCategoryId
+      );
+    } else if (selectedCategoryId && selectedCategoryId > 0) {
+      params.categoryId = selectedCategoryId;
+      console.log(
+        "🔍 Fetching products for main category:",
+        selectedCategoryId
+      );
+    } else {
+      console.log("🔍 Fetching all products");
+    }
+
+    return params;
+  }, [
+    currentPage,
+    selectedNestedSubCategoryId,
+    selectedSubCategoryId,
+    selectedCategoryId,
+  ]);
+
   const {
-    products,
+    products = [],
     pagination,
-    isLoading: productsLoading,
-    error: productsError,
-  } = useProducts({
-    page: currentPage,
-    limit: 12,
-    categoryId:
-      selectedNestedSubCategoryId || selectedSubCategoryId || undefined,
-  });
+    isLoading: productsLoading = false,
+    error: productsError = null,
+  } = useProducts(productParams);
+
+  // Add debugging for the products response
+  useEffect(() => {
+    console.log("📦 Products response:", {
+      productsCount: products.length,
+      isLoading: productsLoading,
+      hasError: !!productsError,
+      pagination,
+      params: productParams,
+    });
+  }, [products, productsLoading, productsError, pagination, productParams]);
 
   const {
     addToCart,
-    count: cartCount,
-    cartItems,
+    count: cartCount = 0,
+    cartItems = [],
     updateCartItem,
     removeCartItem,
   } = useCart();
@@ -200,8 +358,8 @@ export default function StoreProducts() {
     addToWishlist,
     removeFromWishlist,
     isInWishlist,
-    isAddingToWishlist,
-    isRemovingFromWishlist,
+    isAddingToWishlist = false,
+    isRemovingFromWishlist = false,
   } = useWishlist();
 
   const categories = STATIC_CATEGORIES.map((cat) => ({
@@ -212,172 +370,235 @@ export default function StoreProducts() {
   }));
 
   // Helper functions
-  const getCartItemForProduct = (productId: number) => {
-    return cartItems.find((item) => item.product.id === productId);
-  };
+  const getCartItemForProduct = useCallback(
+    (productId: number) => {
+      return cartItems.find((item) => item.product.id === productId);
+    },
+    [cartItems]
+  );
 
-  const getProductQuantityInCart = (productId: number) => {
-    const cartItem = getCartItemForProduct(productId);
-    return cartItem ? cartItem.quantity : 0;
-  };
+  const getProductQuantityInCart = useCallback(
+    (productId: number) => {
+      const cartItem = getCartItemForProduct(productId);
+      return cartItem ? cartItem.quantity : 0;
+    },
+    [getCartItemForProduct]
+  );
 
-  const handleAddToCart = (product: Product) => {
-    setLoadingProductId(product.id);
-    addToCart(
-      { product_id: product.id, quantity: 1 },
-      {
-        onSuccess: () => {
-          toast({
-            title: "Added to cart",
-            description: `${product.name} has been added to your cart`,
-          });
-          setLoadingProductId(null);
-        },
-        onError: (error: any) => {
-          toast({
-            title: "Error",
-            description: error.message || "Failed to add product to cart",
-            variant: "destructive",
-          });
-          setLoadingProductId(null);
-        },
+  const handleAddToCart = useCallback(
+    async (product: Product) => {
+      if (!product || !product.id) {
+        toast({
+          title: "Error",
+          description: "Invalid product data",
+          variant: "destructive",
+        });
+        return;
       }
-    );
-  };
 
-  const handleUpdateCartQuantity = async (
-    product: Product,
-    newQuantity: number
-  ) => {
-    const cartItem = getCartItemForProduct(product.id);
-    if (!cartItem) return;
+      setLoadingProductId(product.id);
+      try {
+        await addToCart(
+          { product_id: product.id, quantity: 1 },
+          {
+            onSuccess: () => {
+              toast({
+                title: "Added to cart",
+                description: `${product.name} has been added to your cart`,
+              });
+            },
+            onError: (error: any) => {
+              toast({
+                title: "Error",
+                description: error?.message || "Failed to add product to cart",
+                variant: "destructive",
+              });
+            },
+          }
+        );
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error?.message || "Failed to add product to cart",
+          variant: "destructive",
+        });
+      } finally {
+        setLoadingProductId(null);
+      }
+    },
+    [addToCart, toast]
+  );
 
-    if (newQuantity < 1) {
-      handleRemoveFromCart(product);
-      return;
-    }
+  const handleUpdateCartQuantity = useCallback(
+    async (product: Product, newQuantity: number) => {
+      if (!product || !product.id) return;
 
-    setUpdatingProductId(product.id);
-    try {
-      await updateCartItem(cartItem.id, { quantity: newQuantity });
-      toast({
-        title: "Cart updated",
-        description: `${product.name} quantity updated`,
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update cart",
-        variant: "destructive",
-      });
-    } finally {
-      setUpdatingProductId(null);
-    }
-  };
+      const cartItem = getCartItemForProduct(product.id);
+      if (!cartItem) return;
 
-  const handleRemoveFromCart = async (product: Product) => {
-    const cartItem = getCartItemForProduct(product.id);
-    if (!cartItem) return;
+      if (newQuantity < 1) {
+        handleRemoveFromCart(product);
+        return;
+      }
 
-    setUpdatingProductId(product.id);
-    try {
-      await removeCartItem(cartItem.id);
-      toast({
-        title: "Removed from cart",
-        description: `${product.name} has been removed from your cart`,
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to remove from cart",
-        variant: "destructive",
-      });
-    } finally {
-      setUpdatingProductId(null);
-    }
-  };
+      setUpdatingProductId(product.id);
+      try {
+        await updateCartItem(cartItem.id, { quantity: newQuantity });
+        toast({
+          title: "Cart updated",
+          description: `${product.name} quantity updated`,
+        });
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error?.message || "Failed to update cart",
+          variant: "destructive",
+        });
+      } finally {
+        setUpdatingProductId(null);
+      }
+    },
+    [getCartItemForProduct, updateCartItem, toast]
+  );
 
-  const handleWishlistToggle = (product: Product) => {
-    const productId = product.id;
-    if (isInWishlist(productId)) {
-      removeFromWishlist(productId, {
-        onSuccess: () => {
-          toast({
-            title: "Removed from wishlist",
-            description: `${product.name} has been removed from your wishlist`,
+  const handleRemoveFromCart = useCallback(
+    async (product: Product) => {
+      if (!product || !product.id) return;
+
+      const cartItem = getCartItemForProduct(product.id);
+      if (!cartItem) return;
+
+      setUpdatingProductId(product.id);
+      try {
+        await removeCartItem(cartItem.id);
+        toast({
+          title: "Removed from cart",
+          description: `${product.name} has been removed from your cart`,
+        });
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error?.message || "Failed to remove from cart",
+          variant: "destructive",
+        });
+      } finally {
+        setUpdatingProductId(null);
+      }
+    },
+    [getCartItemForProduct, removeCartItem, toast]
+  );
+
+  const handleWishlistToggle = useCallback(
+    async (product: Product) => {
+      if (!product || !product.id) return;
+
+      const productId = product.id;
+      try {
+        if (isInWishlist(productId)) {
+          await removeFromWishlist(productId, {
+            onSuccess: () => {
+              toast({
+                title: "Removed from wishlist",
+                description: `${product.name} has been removed from your wishlist`,
+              });
+            },
+            onError: (error: any) => {
+              toast({
+                title: "Error",
+                description: error?.message || "Failed to remove from wishlist",
+                variant: "destructive",
+              });
+            },
           });
-        },
-        onError: (error: any) => {
-          toast({
-            title: "Error",
-            description: error.message || "Failed to remove from wishlist",
-            variant: "destructive",
-          });
-        },
-      });
-    } else {
-      addToWishlist(
-        { product_id: productId },
-        {
-          onSuccess: () => {
-            toast({
-              title: "Added to wishlist",
-              description: `${product.name} has been added to your wishlist`,
-            });
-          },
-          onError: (error: any) => {
-            toast({
-              title: "Error",
-              description: error.message || "Failed to add to wishlist",
-              variant: "destructive",
-            });
-          },
+        } else {
+          await addToWishlist(
+            { product_id: productId },
+            {
+              onSuccess: () => {
+                toast({
+                  title: "Added to wishlist",
+                  description: `${product.name} has been added to your wishlist`,
+                });
+              },
+              onError: (error: any) => {
+                toast({
+                  title: "Error",
+                  description: error?.message || "Failed to add to wishlist",
+                  variant: "destructive",
+                });
+              },
+            }
+          );
         }
-      );
-    }
-  };
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error?.message || "Failed to update wishlist",
+          variant: "destructive",
+        });
+      }
+    },
+    [isInWishlist, removeFromWishlist, addToWishlist, toast]
+  );
 
-  const handleCategoryChange = (
-    event: React.SyntheticEvent,
-    newValue: string
-  ) => {
-    if (newValue === "all") {
-      setSelectedCategoryId(null);
-      setSelectedSubCategoryId(null);
-      setSelectedNestedSubCategoryId(null);
-      setExpandedCategory(null);
-    } else {
-      const numCategoryId = parseInt(newValue);
-      setSelectedCategoryId(numCategoryId);
-      setSelectedSubCategoryId(null);
-      setSelectedNestedSubCategoryId(null);
-      setExpandedCategory(newValue);
-    }
-    setCurrentPage(1);
-    setSearchQuery("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  const handleCategoryChange = useCallback(
+    (event: React.SyntheticEvent, newValue: string) => {
+      if (newValue === "all") {
+        setSelectedCategoryId(null);
+        setSelectedSubCategoryId(null);
+        setSelectedNestedSubCategoryId(null);
+        setExpandedCategory(null);
+      } else {
+        const numCategoryId = parseInt(newValue);
+        if (!isNaN(numCategoryId)) {
+          setSelectedCategoryId(numCategoryId);
+          setSelectedSubCategoryId(null);
+          setSelectedNestedSubCategoryId(null);
+          setExpandedCategory(newValue);
+        }
+      }
+      setCurrentPage(1);
+      setSearchQuery("");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    []
+  );
 
-  const handleSubCategoryClick = (subCategoryId: number) => {
-    if (selectedSubCategoryId === subCategoryId) {
-      setSelectedSubCategoryId(null);
-      setSelectedNestedSubCategoryId(null);
-    } else {
-      setSelectedSubCategoryId(subCategoryId);
-      setSelectedNestedSubCategoryId(null);
-    }
-    setCurrentPage(1);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  const handleSubCategoryClick = useCallback(
+    (subCategoryId: number) => {
+      if (!subCategoryId || subCategoryId <= 0) return;
 
-  const handleNestedSubCategoryClick = (nestedSubCategoryId: number) => {
-    setSelectedNestedSubCategoryId(nestedSubCategoryId);
-    setCurrentPage(1);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+      console.log("🎯 Subcategory clicked:", subCategoryId);
 
-  const handleSearchResultClick = (item: any) => {
-    setSearchQuery("");
+      if (selectedSubCategoryId === subCategoryId) {
+        setSelectedSubCategoryId(null);
+        setSelectedNestedSubCategoryId(null);
+      } else {
+        setSelectedSubCategoryId(subCategoryId);
+        setSelectedNestedSubCategoryId(null);
+      }
+      setCurrentPage(1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    [selectedSubCategoryId]
+  );
+
+  const handleNestedSubCategoryClick = useCallback(
+    (nestedSubCategoryId: number) => {
+      if (!nestedSubCategoryId || nestedSubCategoryId <= 0) return;
+
+      console.log("🎯 Nested subcategory clicked:", nestedSubCategoryId);
+      setSelectedNestedSubCategoryId(nestedSubCategoryId);
+      setCurrentPage(1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    []
+  );
+
+  const handleSearchResultClick = useCallback((item: any) => {
+    if (!item || !item.id) return;
+
+    console.log("🎯 Search result clicked:", item);
     setCurrentPage(1);
 
     if (item.type === "category") {
@@ -397,225 +618,407 @@ export default function StoreProducts() {
       setExpandedCategory(item.grandParentId?.toString());
     }
 
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+    setTimeout(() => {
+      setSearchQuery("");
+    }, 100);
 
-  const clearFilters = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  const clearFilters = useCallback(() => {
+    console.log("🧹 Clearing all filters");
     setSelectedCategoryId(null);
     setSelectedSubCategoryId(null);
     setSelectedNestedSubCategoryId(null);
     setExpandedCategory(null);
     setSearchQuery("");
     setCurrentPage(1);
-    setIsMobileSidebarOpen(false); // Close mobile sidebar when clearing filters
+    setIsMobileSidebarOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  }, []);
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchQuery(e.target.value);
-    setCurrentPage(1);
-  };
+  const handleSearchChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const newValue = e.target.value;
+      setSearchQuery(newValue);
 
-  // Mobile-friendly category navigation handlers
-  const handleMobileCategorySelect = (categoryId: number | null) => {
-    setSelectedCategoryId(categoryId);
-    setSelectedSubCategoryId(null);
-    setSelectedNestedSubCategoryId(null);
-    setExpandedCategory(categoryId?.toString() || null);
-    setCurrentPage(1);
+      setTimeout(() => {
+        if (searchInputRef.current) {
+          searchInputRef.current.focus();
+        }
+        if (mobileSearchInputRef.current) {
+          mobileSearchInputRef.current.focus();
+        }
+      }, 0);
+    },
+    []
+  );
+
+  const handleClearSearch = useCallback(() => {
     setSearchQuery("");
-    setIsMobileSidebarOpen(false); // Close mobile sidebar
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+    setCurrentPage(1);
+  }, []);
 
-  const handleMobileSubCategorySelect = (subCategoryId: number) => {
+  const handleMobileCategorySelect = useCallback(
+    (categoryId: number | null) => {
+      console.log("📱 Mobile category selected:", categoryId);
+      setSelectedCategoryId(categoryId);
+      setSelectedSubCategoryId(null);
+      setSelectedNestedSubCategoryId(null);
+      setExpandedCategory(categoryId?.toString() || null);
+      setCurrentPage(1);
+      setSearchQuery("");
+      setIsMobileSidebarOpen(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    []
+  );
+
+  const handleMobileSubCategorySelect = useCallback((subCategoryId: number) => {
+    if (!subCategoryId || subCategoryId <= 0) return;
+
+    console.log("📱 Mobile subcategory selected:", subCategoryId);
     setSelectedSubCategoryId(subCategoryId);
     setSelectedNestedSubCategoryId(null);
     setCurrentPage(1);
-    setIsMobileSidebarOpen(false); // Close mobile sidebar
+    setIsMobileSidebarOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  }, []);
 
-  const handleMobileNestedSubCategorySelect = (nestedSubCategoryId: number) => {
-    setSelectedNestedSubCategoryId(nestedSubCategoryId);
-    setCurrentPage(1);
-    setIsMobileSidebarOpen(false); // Close mobile sidebar
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  const handleMobileNestedSubCategorySelect = useCallback(
+    (nestedSubCategoryId: number) => {
+      if (!nestedSubCategoryId || nestedSubCategoryId <= 0) return;
 
-  // Sidebar content component for reuse
-  const SidebarContent = ({ isMobile = false }) => (
-    <div className="p-4">
-      <h2 className="font-semibold text-gray-900 mb-4">Categories</h2>
+      console.log(
+        "📱 Mobile nested subcategory selected:",
+        nestedSubCategoryId
+      );
+      setSelectedNestedSubCategoryId(nestedSubCategoryId);
+      setCurrentPage(1);
+      setIsMobileSidebarOpen(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    []
+  );
 
-      {/* Search */}
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-        <Input
-          type="text"
-          placeholder="Search categories..."
-          value={searchQuery}
-          onChange={handleSearchChange}
-          className="pl-10 h-10 text-sm"
-        />
-        {searchQuery && (
-          <button
-            onClick={() => setSearchQuery("")}
-            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
-      </div>
+  // Effect to log category state changes
+  useEffect(() => {
+    console.log("🏷️ Category state changed:", {
+      selectedCategoryId,
+      selectedSubCategoryId,
+      selectedNestedSubCategoryId,
+      currentPage,
+    });
+  }, [
+    selectedCategoryId,
+    selectedSubCategoryId,
+    selectedNestedSubCategoryId,
+    currentPage,
+  ]);
 
-      {/* Search Results */}
-      {searchQuery && filteredCategories.length > 0 && (
-        <div className="mb-4 max-h-64 overflow-y-auto">
-          <div className="text-xs text-gray-500 mb-2">Search Results</div>
-          {filteredCategories.map((item) => (
-            <div
-              key={`${item.type}-${item.id}`}
-              onClick={() => {
-                handleSearchResultClick(item);
-                if (isMobile) setIsMobileSidebarOpen(false);
+  const SidebarContent = React.memo(
+    ({ isMobile = false }: { isMobile?: boolean }) => (
+      <div className="h-full flex flex-col">
+        <div className="p-4 border-b border-gray-200 flex-shrink-0">
+          <h2 className="font-semibold text-gray-900 mb-4">Categories</h2>
+
+          <div className="relative">
+            <TextField
+              inputRef={isMobile ? mobileSearchInputRef : searchInputRef}
+              type="text"
+              placeholder="Search categories..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+              size="small"
+              fullWidth
+              variant="outlined"
+              autoComplete="off"
+              spellCheck={false}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search className="w-4 h-4 text-gray-400" />
+                  </InputAdornment>
+                ),
+                endAdornment: searchQuery ? (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={handleClearSearch}
+                      size="small"
+                      aria-label="Clear search"
+                      sx={{ color: "gray" }}
+                    >
+                      <X className="w-4 h-4" />
+                    </IconButton>
+                  </InputAdornment>
+                ) : null,
+                sx: {
+                  height: "40px",
+                  fontSize: "14px",
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: "6px",
+                  },
+                },
               }}
-              className="p-2 hover:bg-gray-50 rounded cursor-pointer text-sm"
-            >
-              <div className="font-medium text-gray-900">{item.name}</div>
-              <div className="text-xs text-gray-500">{item.fullPath}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Category List */}
-      {!searchQuery && (
-        <div className="space-y-1">
-          <div
-            onClick={() =>
-              isMobile ? handleMobileCategorySelect(null) : clearFilters()
-            }
-            className={cn(
-              "p-2 rounded cursor-pointer text-sm",
-              !selectedCategoryId
-                ? "bg-red-50 text-red-700 font-medium"
-                : "text-gray-700 hover:bg-gray-50"
-            )}
-          >
-            All Categories
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  "& fieldset": {
+                    borderColor: "#e5e7eb",
+                  },
+                  "&:hover fieldset": {
+                    borderColor: "#d1d5db",
+                  },
+                  "&.Mui-focused fieldset": {
+                    borderColor: "#dc2626",
+                    borderWidth: "1px",
+                  },
+                },
+              }}
+            />
           </div>
+        </div>
 
-          {categories.map((category) => (
-            <div key={category.id}>
+        <div className="flex-1 overflow-y-auto p-4">
+          {/* Search Results */}
+          {searchQuery && filteredCategories.length > 0 && (
+            <div className="mb-4">
+              <div className="text-xs text-gray-500 mb-2">
+                Search Results ({filteredCategories.length})
+              </div>
+              <div className="space-y-1">
+                {filteredCategories.map((item) => (
+                  <div
+                    key={`${item.type}-${item.id}`}
+                    onClick={() => {
+                      handleSearchResultClick(item);
+                      if (isMobile) setIsMobileSidebarOpen(false);
+                    }}
+                    className="p-3 hover:bg-gray-50 rounded cursor-pointer text-sm transition-colors border border-gray-100 hover:border-gray-200"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900 truncate">
+                          {item.name}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1 truncate">
+                          {item.description}
+                        </div>
+                        <div className="text-xs text-blue-600 mt-1 truncate">
+                          {item.fullPath}
+                        </div>
+                      </div>
+                      <div className="ml-2 flex-shrink-0">
+                        <span
+                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            item.type === "category"
+                              ? "bg-blue-100 text-blue-800"
+                              : item.type === "subcategory"
+                              ? "bg-green-100 text-green-800"
+                              : "bg-purple-100 text-purple-800"
+                          }`}
+                        >
+                          {item.type === "category"
+                            ? "Category"
+                            : item.type === "subcategory"
+                            ? "Subcategory"
+                            : "Nested"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* No search results */}
+          {searchQuery && filteredCategories.length === 0 && (
+            <div className="mb-4 text-center py-8">
+              <div className="text-sm text-gray-500">
+                No categories found for "{searchQuery}"
+              </div>
+              <button
+                onClick={handleClearSearch}
+                className="text-xs text-blue-600 hover:text-blue-800 mt-2"
+              >
+                Clear search
+              </button>
+            </div>
+          )}
+
+          {/* Category List */}
+          {!searchQuery && (
+            <div className="space-y-1">
               <div
                 onClick={() =>
-                  isMobile
-                    ? handleMobileCategorySelect(parseInt(category.id))
-                    : handleCategoryChange({} as any, category.id)
+                  isMobile ? handleMobileCategorySelect(null) : clearFilters()
                 }
                 className={cn(
-                  "p-2 rounded cursor-pointer text-sm flex items-center justify-between",
-                  selectedCategoryId?.toString() === category.id
+                  "p-2 rounded cursor-pointer text-sm transition-colors",
+                  !selectedCategoryId
                     ? "bg-red-50 text-red-700 font-medium"
                     : "text-gray-700 hover:bg-gray-50"
                 )}
               >
-                <span>{category.name}</span>
-                {category.has_children &&
-                  selectedCategoryId?.toString() === category.id && (
-                    <ChevronDown className="w-4 h-4" />
-                  )}
+                All Categories
               </div>
 
-              {/* Subcategories */}
-              {selectedCategoryId?.toString() === category.id && (
-                <div className="ml-4 mt-1 space-y-1">
-                  {subCategoriesLoading ? (
-                    <div className="space-y-1">
-                      {[1, 2, 3].map((i) => (
-                        <Skeleton key={i} className="h-8 w-full" />
-                      ))}
-                    </div>
-                  ) : (
-                    subCategories.map((subCat) => (
-                      <div key={subCat.entity_id}>
-                        <div
-                          onClick={() =>
-                            isMobile
-                              ? handleMobileSubCategorySelect(subCat.entity_id)
-                              : handleSubCategoryClick(subCat.entity_id)
-                          }
-                          className={cn(
-                            "p-1.5 rounded cursor-pointer text-sm flex items-center justify-between",
-                            selectedSubCategoryId === subCat.entity_id
-                              ? "bg-red-50 text-red-700 font-medium"
-                              : "text-gray-600 hover:bg-gray-50"
-                          )}
-                        >
-                          <span>{subCat.name}</span>
-                          {subCat.has_children &&
-                            selectedSubCategoryId === subCat.entity_id && (
-                              <ChevronDown className="w-3 h-3" />
-                            )}
-                        </div>
+              {categories.map((category) => {
+                const categoryId = parseInt(category.id);
+                const hookData = allCategoryHooks.find(
+                  (_, index) =>
+                    STATIC_CATEGORIES[index].entity_id === categoryId
+                );
 
-                        {/* Nested Subcategories */}
-                        {selectedSubCategoryId === subCat.entity_id && (
-                          <div className="ml-4 mt-1 space-y-1">
-                            {nestedSubCategoriesLoading ? (
-                              <div className="space-y-1">
-                                {[1, 2].map((i) => (
-                                  <Skeleton key={i} className="h-6 w-full" />
-                                ))}
-                              </div>
-                            ) : (
-                              nestedSubCategories.map((nestedSubCat) => (
-                                <div
-                                  key={nestedSubCat.entity_id}
-                                  onClick={() =>
-                                    isMobile
-                                      ? handleMobileNestedSubCategorySelect(
-                                          nestedSubCat.entity_id
-                                        )
-                                      : handleNestedSubCategoryClick(
-                                          nestedSubCat.entity_id
-                                        )
-                                  }
-                                  className={cn(
-                                    "p-1 rounded cursor-pointer text-xs",
-                                    selectedNestedSubCategoryId ===
-                                      nestedSubCat.entity_id
-                                      ? "bg-red-50 text-red-700 font-medium"
-                                      : "text-gray-600 hover:bg-gray-50"
-                                  )}
-                                >
-                                  {nestedSubCat.name}
-                                </div>
-                              ))
-                            )}
+                return (
+                  <div key={category.id} className="space-y-1">
+                    <div
+                      onClick={() => {
+                        if (isMobile) {
+                          handleMobileCategorySelect(categoryId);
+                        } else {
+                          if (selectedCategoryId === categoryId) {
+                            setSelectedCategoryId(null);
+                            setSelectedSubCategoryId(null);
+                            setSelectedNestedSubCategoryId(null);
+                            setExpandedCategory(null);
+                          } else {
+                            handleCategoryChange({} as any, category.id);
+                          }
+                        }
+                      }}
+                      className={cn(
+                        "p-2 rounded cursor-pointer text-sm flex items-center justify-between transition-colors",
+                        selectedCategoryId === categoryId
+                          ? "bg-red-50 text-red-700 font-medium"
+                          : "text-gray-700 hover:bg-gray-50"
+                      )}
+                    >
+                      <span>{category.name}</span>
+                      {category.has_children && (
+                        <ChevronDown
+                          className={cn(
+                            "w-4 h-4 transition-transform duration-200",
+                            selectedCategoryId === categoryId && "rotate-180"
+                          )}
+                        />
+                      )}
+                    </div>
+
+                    {selectedCategoryId === categoryId && (
+                      <div className="ml-4 space-y-1 animate-in slide-in-from-top-2 duration-200">
+                        {subCategoriesLoading ? (
+                          <div className="space-y-1">
+                            {[1, 2, 3].map((i) => (
+                              <Skeleton key={i} className="h-8 w-full" />
+                            ))}
                           </div>
+                        ) : hookData?.error ? (
+                          <div className="text-red-500 text-xs p-2">
+                            Error loading subcategories
+                          </div>
+                        ) : (
+                          subCategories.map((subCat) => (
+                            <div key={subCat.entity_id} className="space-y-1">
+                              <div
+                                onClick={() => {
+                                  if (isMobile) {
+                                    handleMobileSubCategorySelect(
+                                      subCat.entity_id
+                                    );
+                                  } else {
+                                    handleSubCategoryClick(subCat.entity_id);
+                                  }
+                                }}
+                                className={cn(
+                                  "p-1.5 rounded cursor-pointer text-sm flex items-center justify-between transition-colors",
+                                  selectedSubCategoryId === subCat.entity_id
+                                    ? "bg-red-50 text-red-700 font-medium"
+                                    : "text-gray-600 hover:bg-gray-50"
+                                )}
+                              >
+                                <span>{subCat.name}</span>
+                                {subCat.has_children && (
+                                  <ChevronDown
+                                    className={cn(
+                                      "w-3 h-3 transition-transform duration-200",
+                                      selectedSubCategoryId ===
+                                        subCat.entity_id && "rotate-180"
+                                    )}
+                                  />
+                                )}
+                              </div>
+
+                              {selectedSubCategoryId === subCat.entity_id && (
+                                <div className="ml-4 space-y-1 animate-in slide-in-from-top-2 duration-200">
+                                  {nestedSubCategoriesLoading ? (
+                                    <div className="space-y-1">
+                                      {[1, 2].map((i) => (
+                                        <Skeleton
+                                          key={i}
+                                          className="h-6 w-full"
+                                        />
+                                      ))}
+                                    </div>
+                                  ) : nestedSubCategoriesError ? (
+                                    <div className="text-red-500 text-xs p-2">
+                                      Error loading nested categories
+                                    </div>
+                                  ) : (
+                                    nestedSubCategories.map((nestedSubCat) => (
+                                      <div
+                                        key={nestedSubCat.entity_id}
+                                        onClick={() =>
+                                          isMobile
+                                            ? handleMobileNestedSubCategorySelect(
+                                                nestedSubCat.entity_id
+                                              )
+                                            : handleNestedSubCategoryClick(
+                                                nestedSubCat.entity_id
+                                              )
+                                        }
+                                        className={cn(
+                                          "p-1 rounded cursor-pointer text-xs transition-colors",
+                                          selectedNestedSubCategoryId ===
+                                            nestedSubCat.entity_id
+                                            ? "bg-red-50 text-red-700 font-medium"
+                                            : "text-gray-600 hover:bg-gray-50"
+                                        )}
+                                      >
+                                        {nestedSubCat.name}
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ))
                         )}
                       </div>
-                    ))
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          ))}
+          )}
         </div>
-      )}
-    </div>
+      </div>
+    )
   );
 
-  const handlePageChange = (page: number) => {
-    if (pagination && (page < 1 || page > pagination.pages)) {
-      return;
-    }
-    setCurrentPage(page);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  const handlePageChange = useCallback(
+    (page: number) => {
+      if (pagination && (page < 1 || page > pagination.pages)) {
+        return;
+      }
+      console.log("📄 Page changed to:", page);
+      setCurrentPage(page);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    [pagination]
+  );
 
-  const generatePaginationNumbers = () => {
+  const generatePaginationNumbers = useCallback(() => {
     if (!pagination || pagination.pages <= 1) return [];
 
     const totalPages = pagination.pages;
@@ -657,8 +1060,9 @@ export default function StoreProducts() {
     }
 
     return pages;
-  };
+  }, [pagination, currentPage]);
 
+  // Error boundary for rendering
   if (productsError) {
     return (
       <div className="px-4 py-6">
@@ -677,7 +1081,7 @@ export default function StoreProducts() {
   return (
     <div className="flex flex-col lg:flex-row h-full bg-gray-50">
       {/* Desktop Sidebar */}
-      <div className="hidden lg:block w-64 bg-white border-r border-gray-200 flex-shrink-0">
+      <div className="hidden lg:block w-64 bg-white border-r border-gray-200 flex-shrink-0 h-full">
         <SidebarContent />
       </div>
 
@@ -703,7 +1107,7 @@ export default function StoreProducts() {
               <SheetTrigger asChild>
                 <Button variant="outline" size="sm">
                   <Filter className="w-4 h-4 mr-2" />
-                  Categories
+                  Filters
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-80 p-0">
@@ -986,7 +1390,6 @@ export default function StoreProducts() {
               {pagination && pagination.pages > 1 && (
                 <div className="mt-6 lg:mt-8">
                   <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                    {/* Page info - hidden on mobile */}
                     <div className="hidden sm:block text-sm text-gray-600">
                       Page {currentPage} of {pagination.pages}
                       {pagination.total && (
@@ -996,7 +1399,6 @@ export default function StoreProducts() {
                       )}
                     </div>
 
-                    {/* Pagination controls */}
                     <div className="flex items-center gap-2">
                       <Button
                         variant="outline"
@@ -1009,7 +1411,6 @@ export default function StoreProducts() {
                         <span className="hidden sm:inline ml-1">Prev</span>
                       </Button>
 
-                      {/* Page numbers - show fewer on mobile */}
                       <div className="flex gap-1">
                         {generatePaginationNumbers()
                           .slice(0, window.innerWidth < 640 ? 5 : undefined)
@@ -1056,7 +1457,6 @@ export default function StoreProducts() {
                       </Button>
                     </div>
 
-                    {/* Mobile page info */}
                     <div className="sm:hidden text-sm text-gray-600 text-center">
                       Page {currentPage} of {pagination.pages}
                     </div>

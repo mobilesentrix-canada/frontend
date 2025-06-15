@@ -82,23 +82,7 @@ export const STATIC_CATEGORIES = [
     image_url:
       "https://static.mobilesentrix.ca/catalog/category/brands-other-5.png",
   },
-  {
-    entity_id: 165,
-    level: 2,
-    children_count: 2582,
-    meta_keywords:
-      "Cell Phone Repair Parts, Cell Phone Parts Wholesale, Cell Phone Parts Wholesaler, Cell Phone Parts Suppliers, Cell Phone Parts Supplier, iphone, samsung, htc, parts, wholesale, mobile parts, mobile phone,",
-    children: null,
-    is_anchor: "0",
-    is_part: "1",
-    is_active: "1",
-    name: "Replacement Parts",
-    meta_title:
-      "Cell Phone Parts | Cell Phone Replacements Parts Wholesale and Suppliers ",
-    has_children: true,
-    image_url:
-      "https://static.mobilesentrix.ca/catalog/category/replacement-parts-5.png",
-  },
+
   {
     entity_id: 630,
     level: 2,
