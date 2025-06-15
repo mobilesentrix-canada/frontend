@@ -32,12 +32,21 @@ import {
   ArrowRight,
   Folder,
   FolderOpen,
+  Menu,
+  Filter,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { STATIC_CATEGORIES } from "@/db";
 import { Tabs, Tab, Box } from "@mui/material";
 import { styled } from "@mui/material/styles";
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 // Simple styled tabs
 const StyledTabs = styled(Tabs)({
@@ -79,6 +88,7 @@ export default function StoreProducts() {
   const [updatingProductId, setUpdatingProductId] = useState<number | null>(
     null
   );
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const { toast } = useToast();
 
@@ -397,6 +407,7 @@ export default function StoreProducts() {
     setExpandedCategory(null);
     setSearchQuery("");
     setCurrentPage(1);
+    setIsMobileSidebarOpen(false); // Close mobile sidebar when clearing filters
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -404,6 +415,197 @@ export default function StoreProducts() {
     setSearchQuery(e.target.value);
     setCurrentPage(1);
   };
+
+  // Mobile-friendly category navigation handlers
+  const handleMobileCategorySelect = (categoryId: number | null) => {
+    setSelectedCategoryId(categoryId);
+    setSelectedSubCategoryId(null);
+    setSelectedNestedSubCategoryId(null);
+    setExpandedCategory(categoryId?.toString() || null);
+    setCurrentPage(1);
+    setSearchQuery("");
+    setIsMobileSidebarOpen(false); // Close mobile sidebar
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleMobileSubCategorySelect = (subCategoryId: number) => {
+    setSelectedSubCategoryId(subCategoryId);
+    setSelectedNestedSubCategoryId(null);
+    setCurrentPage(1);
+    setIsMobileSidebarOpen(false); // Close mobile sidebar
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleMobileNestedSubCategorySelect = (nestedSubCategoryId: number) => {
+    setSelectedNestedSubCategoryId(nestedSubCategoryId);
+    setCurrentPage(1);
+    setIsMobileSidebarOpen(false); // Close mobile sidebar
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // Sidebar content component for reuse
+  const SidebarContent = ({ isMobile = false }) => (
+    <div className="p-4">
+      <h2 className="font-semibold text-gray-900 mb-4">Categories</h2>
+
+      {/* Search */}
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+        <Input
+          type="text"
+          placeholder="Search categories..."
+          value={searchQuery}
+          onChange={handleSearchChange}
+          className="pl-10 h-10 text-sm"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery("")}
+            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Search Results */}
+      {searchQuery && filteredCategories.length > 0 && (
+        <div className="mb-4 max-h-64 overflow-y-auto">
+          <div className="text-xs text-gray-500 mb-2">Search Results</div>
+          {filteredCategories.map((item) => (
+            <div
+              key={`${item.type}-${item.id}`}
+              onClick={() => {
+                handleSearchResultClick(item);
+                if (isMobile) setIsMobileSidebarOpen(false);
+              }}
+              className="p-2 hover:bg-gray-50 rounded cursor-pointer text-sm"
+            >
+              <div className="font-medium text-gray-900">{item.name}</div>
+              <div className="text-xs text-gray-500">{item.fullPath}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Category List */}
+      {!searchQuery && (
+        <div className="space-y-1">
+          <div
+            onClick={() =>
+              isMobile ? handleMobileCategorySelect(null) : clearFilters()
+            }
+            className={cn(
+              "p-2 rounded cursor-pointer text-sm",
+              !selectedCategoryId
+                ? "bg-red-50 text-red-700 font-medium"
+                : "text-gray-700 hover:bg-gray-50"
+            )}
+          >
+            All Categories
+          </div>
+
+          {categories.map((category) => (
+            <div key={category.id}>
+              <div
+                onClick={() =>
+                  isMobile
+                    ? handleMobileCategorySelect(parseInt(category.id))
+                    : handleCategoryChange({} as any, category.id)
+                }
+                className={cn(
+                  "p-2 rounded cursor-pointer text-sm flex items-center justify-between",
+                  selectedCategoryId?.toString() === category.id
+                    ? "bg-red-50 text-red-700 font-medium"
+                    : "text-gray-700 hover:bg-gray-50"
+                )}
+              >
+                <span>{category.name}</span>
+                {category.has_children &&
+                  selectedCategoryId?.toString() === category.id && (
+                    <ChevronDown className="w-4 h-4" />
+                  )}
+              </div>
+
+              {/* Subcategories */}
+              {selectedCategoryId?.toString() === category.id && (
+                <div className="ml-4 mt-1 space-y-1">
+                  {subCategoriesLoading ? (
+                    <div className="space-y-1">
+                      {[1, 2, 3].map((i) => (
+                        <Skeleton key={i} className="h-8 w-full" />
+                      ))}
+                    </div>
+                  ) : (
+                    subCategories.map((subCat) => (
+                      <div key={subCat.entity_id}>
+                        <div
+                          onClick={() =>
+                            isMobile
+                              ? handleMobileSubCategorySelect(subCat.entity_id)
+                              : handleSubCategoryClick(subCat.entity_id)
+                          }
+                          className={cn(
+                            "p-1.5 rounded cursor-pointer text-sm flex items-center justify-between",
+                            selectedSubCategoryId === subCat.entity_id
+                              ? "bg-red-50 text-red-700 font-medium"
+                              : "text-gray-600 hover:bg-gray-50"
+                          )}
+                        >
+                          <span>{subCat.name}</span>
+                          {subCat.has_children &&
+                            selectedSubCategoryId === subCat.entity_id && (
+                              <ChevronDown className="w-3 h-3" />
+                            )}
+                        </div>
+
+                        {/* Nested Subcategories */}
+                        {selectedSubCategoryId === subCat.entity_id && (
+                          <div className="ml-4 mt-1 space-y-1">
+                            {nestedSubCategoriesLoading ? (
+                              <div className="space-y-1">
+                                {[1, 2].map((i) => (
+                                  <Skeleton key={i} className="h-6 w-full" />
+                                ))}
+                              </div>
+                            ) : (
+                              nestedSubCategories.map((nestedSubCat) => (
+                                <div
+                                  key={nestedSubCat.entity_id}
+                                  onClick={() =>
+                                    isMobile
+                                      ? handleMobileNestedSubCategorySelect(
+                                          nestedSubCat.entity_id
+                                        )
+                                      : handleNestedSubCategoryClick(
+                                          nestedSubCat.entity_id
+                                        )
+                                  }
+                                  className={cn(
+                                    "p-1 rounded cursor-pointer text-xs",
+                                    selectedNestedSubCategoryId ===
+                                      nestedSubCat.entity_id
+                                      ? "bg-red-50 text-red-700 font-medium"
+                                      : "text-gray-600 hover:bg-gray-50"
+                                  )}
+                                >
+                                  {nestedSubCat.name}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 
   const handlePageChange = (page: number) => {
     if (pagination && (page < 1 || page > pagination.pages)) {
@@ -473,164 +675,100 @@ export default function StoreProducts() {
   }
 
   return (
-    <div className="flex h-full bg-gray-50">
-      {/* Simple Left Sidebar */}
-      <div className="w-64 bg-white border-r border-gray-200 flex-shrink-0">
-        <div className="p-4">
-          <h2 className="font-semibold text-gray-900 mb-4">Categories</h2>
+    <div className="flex flex-col lg:flex-row h-full bg-gray-50">
+      {/* Desktop Sidebar */}
+      <div className="hidden lg:block w-64 bg-white border-r border-gray-200 flex-shrink-0">
+        <SidebarContent />
+      </div>
 
-          {/* Search */}
-          <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <Input
-              type="text"
-              placeholder="Search categories..."
-              value={searchQuery}
-              onChange={handleSearchChange}
-              className="pl-10 h-10 text-sm"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-
-          {/* Search Results */}
-          {searchQuery && filteredCategories.length > 0 && (
-            <div className="mb-4 max-h-64 overflow-y-auto">
-              <div className="text-xs text-gray-500 mb-2">Search Results</div>
-              {filteredCategories.map((item) => (
-                <div
-                  key={`${item.type}-${item.id}`}
-                  onClick={() => handleSearchResultClick(item)}
-                  className="p-2 hover:bg-gray-50 rounded cursor-pointer text-sm"
-                >
-                  <div className="font-medium text-gray-900">{item.name}</div>
-                  <div className="text-xs text-gray-500">{item.fullPath}</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Category List */}
-          {!searchQuery && (
-            <div className="space-y-1">
-              <div
-                onClick={() => clearFilters()}
-                className={cn(
-                  "p-2 rounded cursor-pointer text-sm",
-                  !selectedCategoryId
-                    ? "bg-red-50 text-red-700 font-medium"
-                    : "text-gray-700 hover:bg-gray-50"
+      {/* Mobile Header with Filter Button */}
+      <div className="lg:hidden bg-white border-b border-gray-200 p-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold text-gray-900">Products</h1>
+          <div className="flex items-center gap-3">
+            <Link to="/store/cart">
+              <Button variant="outline" size="sm" className="relative">
+                <ShoppingCart className="w-4 h-4" />
+                {cartCount > 0 && (
+                  <Badge className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full px-1.5 py-0.5 text-xs min-w-[1.25rem] h-5">
+                    {cartCount}
+                  </Badge>
                 )}
-              >
-                All Categories
-              </div>
-
-              {categories.map((category) => (
-                <div key={category.id}>
-                  <div
-                    onClick={() => handleCategoryChange({} as any, category.id)}
-                    className={cn(
-                      "p-2 rounded cursor-pointer text-sm flex items-center justify-between",
-                      selectedCategoryId?.toString() === category.id
-                        ? "bg-red-50 text-red-700 font-medium"
-                        : "text-gray-700 hover:bg-gray-50"
-                    )}
-                  >
-                    <span>{category.name}</span>
-                    {category.has_children &&
-                      selectedCategoryId?.toString() === category.id && (
-                        <ChevronDown className="w-4 h-4" />
-                      )}
-                  </div>
-
-                  {/* Subcategories */}
-                  {selectedCategoryId?.toString() === category.id && (
-                    <div className="ml-4 mt-1 space-y-1">
-                      {subCategoriesLoading ? (
-                        <div className="space-y-1">
-                          {[1, 2, 3].map((i) => (
-                            <Skeleton key={i} className="h-8 w-full" />
-                          ))}
-                        </div>
-                      ) : (
-                        subCategories.map((subCat) => (
-                          <div key={subCat.entity_id}>
-                            <div
-                              onClick={() =>
-                                handleSubCategoryClick(subCat.entity_id)
-                              }
-                              className={cn(
-                                "p-1.5 rounded cursor-pointer text-sm flex items-center justify-between",
-                                selectedSubCategoryId === subCat.entity_id
-                                  ? "bg-red-50 text-red-700 font-medium"
-                                  : "text-gray-600 hover:bg-gray-50"
-                              )}
-                            >
-                              <span>{subCat.name}</span>
-                              {subCat.has_children &&
-                                selectedSubCategoryId === subCat.entity_id && (
-                                  <ChevronDown className="w-3 h-3" />
-                                )}
-                            </div>
-
-                            {/* Nested Subcategories */}
-                            {selectedSubCategoryId === subCat.entity_id && (
-                              <div className="ml-4 mt-1 space-y-1">
-                                {nestedSubCategoriesLoading ? (
-                                  <div className="space-y-1">
-                                    {[1, 2].map((i) => (
-                                      <Skeleton
-                                        key={i}
-                                        className="h-6 w-full"
-                                      />
-                                    ))}
-                                  </div>
-                                ) : (
-                                  nestedSubCategories.map((nestedSubCat) => (
-                                    <div
-                                      key={nestedSubCat.entity_id}
-                                      onClick={() =>
-                                        handleNestedSubCategoryClick(
-                                          nestedSubCat.entity_id
-                                        )
-                                      }
-                                      className={cn(
-                                        "p-1 rounded cursor-pointer text-xs",
-                                        selectedNestedSubCategoryId ===
-                                          nestedSubCat.entity_id
-                                          ? "bg-red-50 text-red-700 font-medium"
-                                          : "text-gray-600 hover:bg-gray-50"
-                                      )}
-                                    >
-                                      {nestedSubCat.name}
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+              </Button>
+            </Link>
+            <Sheet
+              open={isMobileSidebarOpen}
+              onOpenChange={setIsMobileSidebarOpen}
+            >
+              <SheetTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Filter className="w-4 h-4 mr-2" />
+                  Categories
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-80 p-0">
+                <SheetHeader className="p-4 border-b">
+                  <SheetTitle>Filter Products</SheetTitle>
+                </SheetHeader>
+                <SidebarContent isMobile={true} />
+              </SheetContent>
+            </Sheet>
+          </div>
         </div>
+
+        {/* Mobile breadcrumb */}
+        {(selectedCategoryId ||
+          selectedSubCategoryId ||
+          selectedNestedSubCategoryId) && (
+          <div className="mt-3 flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              {selectedCategoryId && (
+                <span className="font-medium">
+                  {
+                    STATIC_CATEGORIES.find(
+                      (cat) => cat.entity_id === selectedCategoryId
+                    )?.name
+                  }
+                </span>
+              )}
+              {selectedSubCategoryId && (
+                <span>
+                  {" > "}
+                  <span className="font-medium">
+                    {
+                      subCategories.find(
+                        (sub) => sub.entity_id === selectedSubCategoryId
+                      )?.name
+                    }
+                  </span>
+                </span>
+              )}
+              {selectedNestedSubCategoryId && (
+                <span>
+                  {" > "}
+                  <span className="font-medium">
+                    {
+                      nestedSubCategories.find(
+                        (nested) =>
+                          nested.entity_id === selectedNestedSubCategoryId
+                      )?.name
+                    }
+                  </span>
+                </span>
+              )}
+            </div>
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-auto">
-        <div className="p-6">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-6">
+        <div className="p-4 lg:p-6">
+          {/* Desktop Header */}
+          <div className="hidden lg:flex justify-between items-center mb-6">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Products</h1>
               {pagination && (
@@ -654,20 +792,29 @@ export default function StoreProducts() {
             </Link>
           </div>
 
+          {/* Mobile Product Count */}
+          <div className="lg:hidden mb-4">
+            {pagination && (
+              <p className="text-sm text-gray-500">
+                {pagination.total || 0} products found
+              </p>
+            )}
+          </div>
+
           {/* Products Grid */}
           {productsLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
               {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                 <Card key={i} className="overflow-hidden">
                   <Skeleton className="aspect-square w-full" />
-                  <CardHeader>
-                    <Skeleton className="h-6 w-3/4" />
-                    <Skeleton className="h-4 w-full" />
+                  <CardHeader className="p-3 lg:p-4">
+                    <Skeleton className="h-4 lg:h-6 w-3/4" />
+                    <Skeleton className="h-3 lg:h-4 w-full" />
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="p-3 lg:p-4 pt-0">
                     <div className="flex justify-between items-center">
-                      <Skeleton className="h-8 w-20" />
-                      <Skeleton className="h-8 w-20" />
+                      <Skeleton className="h-6 lg:h-8 w-16 lg:w-20" />
+                      <Skeleton className="h-6 lg:h-8 w-16 lg:w-20" />
                     </div>
                   </CardContent>
                 </Card>
@@ -675,7 +822,7 @@ export default function StoreProducts() {
             </div>
           ) : products.length > 0 ? (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
                 {products.map((product) => {
                   const isThisProductLoading = loadingProductId === product.id;
                   const isThisProductUpdating =
@@ -712,8 +859,8 @@ export default function StoreProducts() {
                           }`}
                         >
                           <div className="text-center p-4">
-                            <div className="w-16 h-16 mx-auto mb-2 bg-white rounded-full flex items-center justify-center shadow-sm">
-                              <Grid3X3 className="w-8 h-8 text-gray-400" />
+                            <div className="w-12 h-12 lg:w-16 lg:h-16 mx-auto mb-2 bg-white rounded-full flex items-center justify-center shadow-sm">
+                              <Grid3X3 className="w-6 h-6 lg:w-8 lg:h-8 text-gray-400" />
                             </div>
                             <p className="text-xs text-gray-500 font-medium">
                               {product.manufacturer}
@@ -725,7 +872,7 @@ export default function StoreProducts() {
                           variant="ghost"
                           size="sm"
                           className={cn(
-                            "absolute top-2 left-2 h-8 w-8 p-0 rounded-full bg-white shadow-sm",
+                            "absolute top-2 left-2 h-7 w-7 lg:h-8 lg:w-8 p-0 rounded-full bg-white shadow-sm",
                             isInWishlist(product.id) && "text-red-500"
                           )}
                           onClick={() => handleWishlistToggle(product)}
@@ -735,7 +882,7 @@ export default function StoreProducts() {
                         >
                           <Heart
                             className={cn(
-                              "w-4 h-4",
+                              "w-3 h-3 lg:w-4 lg:h-4",
                               isInWishlist(product.id) && "fill-current"
                             )}
                           />
@@ -744,14 +891,14 @@ export default function StoreProducts() {
                         {isInCart && (
                           <div className="absolute bottom-2 right-2">
                             <Badge className="bg-green-500 text-white text-xs">
-                              {cartQuantity} in cart
+                              {cartQuantity}
                             </Badge>
                           </div>
                         )}
                       </div>
 
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-sm leading-tight line-clamp-2">
+                      <CardHeader className="p-3 lg:p-4 pb-2 lg:pb-3">
+                        <CardTitle className="text-sm lg:text-base leading-tight line-clamp-2">
                           {product.name}
                         </CardTitle>
                         {product.sku && (
@@ -761,13 +908,13 @@ export default function StoreProducts() {
                         )}
                       </CardHeader>
 
-                      <CardContent>
+                      <CardContent className="p-3 lg:p-4 pt-0">
                         <div className="flex gap-2 items-center">
                           <Link to={`/store/product/${product.id}`}>
                             <Button
                               variant="outline"
                               size="sm"
-                              className="text-xs"
+                              className="text-xs flex-1 lg:flex-none"
                             >
                               View
                             </Button>
@@ -835,65 +982,94 @@ export default function StoreProducts() {
                 })}
               </div>
 
-              {/* Simple Pagination */}
+              {/* Responsive Pagination */}
               {pagination && pagination.pages > 1 && (
-                <div className="mt-8 flex justify-center">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handlePageChange(currentPage - 1)}
-                      disabled={currentPage === 1}
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </Button>
-
-                    <div className="flex gap-1">
-                      {generatePaginationNumbers().map((page, index) => {
-                        if (page === "...") {
-                          return (
-                            <span
-                              key={`ellipsis-${index}`}
-                              className="px-3 py-2 text-gray-500"
-                            >
-                              ...
-                            </span>
-                          );
-                        }
-
-                        const pageNum = page as number;
-                        return (
-                          <Button
-                            key={pageNum}
-                            variant={
-                              currentPage === pageNum ? "default" : "outline"
-                            }
-                            size="sm"
-                            onClick={() => handlePageChange(pageNum)}
-                            className="min-w-[32px]"
-                          >
-                            {pageNum}
-                          </Button>
-                        );
-                      })}
+                <div className="mt-6 lg:mt-8">
+                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                    {/* Page info - hidden on mobile */}
+                    <div className="hidden sm:block text-sm text-gray-600">
+                      Page {currentPage} of {pagination.pages}
+                      {pagination.total && (
+                        <span className="ml-2">
+                          ({pagination.total} total products)
+                        </span>
+                      )}
                     </div>
 
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handlePageChange(currentPage + 1)}
-                      disabled={currentPage === pagination.pages}
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
+                    {/* Pagination controls */}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="px-2 lg:px-3"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                        <span className="hidden sm:inline ml-1">Prev</span>
+                      </Button>
+
+                      {/* Page numbers - show fewer on mobile */}
+                      <div className="flex gap-1">
+                        {generatePaginationNumbers()
+                          .slice(0, window.innerWidth < 640 ? 5 : undefined)
+                          .map((page, index) => {
+                            if (page === "...") {
+                              return (
+                                <span
+                                  key={`ellipsis-${index}`}
+                                  className="px-2 lg:px-3 py-2 text-gray-500 text-sm"
+                                >
+                                  ...
+                                </span>
+                              );
+                            }
+
+                            const pageNum = page as number;
+                            return (
+                              <Button
+                                key={pageNum}
+                                variant={
+                                  currentPage === pageNum
+                                    ? "default"
+                                    : "outline"
+                                }
+                                size="sm"
+                                onClick={() => handlePageChange(pageNum)}
+                                className="min-w-[32px] px-2 lg:px-3"
+                              >
+                                {pageNum}
+                              </Button>
+                            );
+                          })}
+                      </div>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage === pagination.pages}
+                        className="px-2 lg:px-3"
+                      >
+                        <span className="hidden sm:inline mr-1">Next</span>
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    {/* Mobile page info */}
+                    <div className="sm:hidden text-sm text-gray-600 text-center">
+                      Page {currentPage} of {pagination.pages}
+                    </div>
                   </div>
                 </div>
               )}
             </>
           ) : (
             <div className="text-center py-12">
-              <Grid3X3 className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-              <p className="text-gray-500 text-lg">No products found</p>
+              <Grid3X3 className="w-12 h-12 lg:w-16 lg:h-16 mx-auto text-gray-400 mb-4" />
+              <p className="text-gray-500 text-base lg:text-lg">
+                No products found
+              </p>
               <Button variant="outline" onClick={clearFilters} className="mt-4">
                 Clear Filters
               </Button>
