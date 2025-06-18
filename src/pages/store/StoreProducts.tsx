@@ -150,77 +150,135 @@ export default function StoreProducts() {
       : null
   );
 
-  // NEW: Get all subcategories for proactive fetching (don't rely only on has_children)
-  const subcategoriesWithChildren = useMemo(() => {
-    const allSubs: any[] = [];
-    allCategoryHooks.forEach((hookData, categoryIndex) => {
+  // NEW: Create a fixed number of hooks for fetching nested subcategories
+  // We'll create hooks for the first 20 subcategory IDs and manage them dynamically
+  const [subcategoryIdsToFetch, setSubcategoryIdsToFetch] = useState<number[]>([]);
+  
+  // Extract all subcategory IDs that we want to fetch nested data for
+  useEffect(() => {
+    const allSubcategoryIds: number[] = [];
+    allCategoryHooks.forEach((hookData) => {
       if (hookData?.subCategories && !hookData.isLoading && !hookData.error) {
         hookData.subCategories.forEach((subCat: any) => {
-          // Include ALL subcategories, not just ones marked as having children
-          allSubs.push({
-            ...subCat,
-            parentCategoryId: STATIC_CATEGORIES[categoryIndex].entity_id,
-            parentCategoryName: STATIC_CATEGORIES[categoryIndex].name,
-          });
+          allSubcategoryIds.push(subCat.entity_id);
         });
       }
     });
-    console.log(`📋 Found ${allSubs.length} total subcategories`);
-    if (allSubs.length > 0) {
-      console.log('Sample subcategories:', allSubs.slice(0, 3).map(s => ({ 
-        name: s.name, 
-        id: s.entity_id, 
-        has_children: s.has_children 
-      })));
-    }
-    return allSubs;
+    
+    console.log(`🔍 Found ${allSubcategoryIds.length} subcategories to fetch nested data for`);
+    setSubcategoryIdsToFetch(allSubcategoryIds);
   }, [allCategoryHooks]);
 
-  // NEW: Simple approach - just try to fetch nested categories when user navigates
-  // We'll populate the search index as users explore categories
+  // Create fixed hooks for fetching nested subcategories (max 20 at a time)
+  const maxConcurrentFetches = 20;
+  const nestedHooks = Array.from({ length: maxConcurrentFetches }, (_, index) => {
+    const subcategoryId = subcategoryIdsToFetch[index] || null;
+    return {
+      index,
+      subcategoryId,
+      hookResult: useSubCategories(subcategoryId),
+    };
+  });
+
+  // Process the hook results and build nested subcategory data
   useEffect(() => {
-    // When user selects a subcategory and we get nested data, add it to search index
-    if (selectedSubCategoryId && nestedSubCategories.length > 0 && !fetchedNestedSubCategoryIds.has(selectedSubCategoryId)) {
-      const parentCategory = STATIC_CATEGORIES.find(
-        (cat) => cat.entity_id === selectedCategoryId
-      );
-      const parentSubCategory = subCategories.find(
-        (sub) => sub.entity_id === selectedSubCategoryId
-      );
+    if (subcategoryIdsToFetch.length === 0) return;
 
-      if (parentCategory && parentSubCategory) {
-        console.log(`✅ Adding ${nestedSubCategories.length} nested subcategories from navigation to search index`);
+    let newNestedSubCategories: any[] = [];
+    let processedCount = 0;
+
+    nestedHooks.forEach(({ subcategoryId, hookResult, index }) => {
+      if (!subcategoryId || fetchedNestedSubCategoryIds.has(subcategoryId)) return;
+
+      const { subCategories: nestedSubs, isLoading, error } = hookResult;
+
+      // Log progress
+      if (!isLoading && !error) {
+        processedCount++;
         
-        const nestedWithMetadata = nestedSubCategories.map((nestedSubCat) => ({
-          id: nestedSubCat.entity_id,
-          name: nestedSubCat.name,
-          type: "nestedSubcategory",
-          level: 3,
-          fullPath: `${parentCategory.name} > ${parentSubCategory.name} > ${nestedSubCat.name}`,
-          parentId: selectedSubCategoryId,
-          grandParentId: selectedCategoryId,
-          searchTerms: `${parentCategory.name} ${parentSubCategory.name} ${nestedSubCat.name}`.toLowerCase(),
-          description: `${nestedSubCat.name} in ${parentSubCategory.name}`,
-          parent: `${parentCategory.name} > ${parentSubCategory.name}`,
-          has_children: nestedSubCat.has_children || false,
-        }));
-
-        setAllNestedSubCategories((prev) => {
-          // Check for duplicates
-          const existingIds = new Set(prev.map(item => item.id));
-          const newItems = nestedWithMetadata.filter(item => !existingIds.has(item.id));
-          
-          if (newItems.length > 0) {
-            console.log(`➕ Added ${newItems.length} new nested subcategories to search index`);
-            return [...prev, ...newItems];
+        if (nestedSubs && nestedSubs.length > 0) {
+          // Find the parent subcategory and category info
+          let parentInfo = null;
+          for (const [categoryIndex, hookData] of allCategoryHooks.entries()) {
+            if (hookData?.subCategories) {
+              const parentSubCategory = hookData.subCategories.find(
+                sub => sub.entity_id === subcategoryId
+              );
+              if (parentSubCategory) {
+                parentInfo = {
+                  parentCategory: STATIC_CATEGORIES[categoryIndex],
+                  parentSubCategory,
+                };
+                break;
+              }
+            }
           }
-          return prev;
-        });
 
-        setFetchedNestedSubCategoryIds(prev => new Set(prev).add(selectedSubCategoryId));
+          if (parentInfo) {
+            console.log(`✅ Found ${nestedSubs.length} nested subcategories for: ${parentInfo.parentSubCategory.name}`);
+            
+            const nestedWithMetadata = nestedSubs.map((nestedSubCat: any) => ({
+              id: nestedSubCat.entity_id,
+              name: nestedSubCat.name,
+              type: "nestedSubcategory",
+              level: 3,
+              fullPath: `${parentInfo.parentCategory.name} > ${parentInfo.parentSubCategory.name} > ${nestedSubCat.name}`,
+              parentId: subcategoryId,
+              grandParentId: parentInfo.parentCategory.entity_id,
+              searchTerms: `${parentInfo.parentCategory.name} ${parentInfo.parentSubCategory.name} ${nestedSubCat.name}`.toLowerCase(),
+              description: `${nestedSubCat.name} in ${parentInfo.parentSubCategory.name}`,
+              parent: `${parentInfo.parentCategory.name} > ${parentInfo.parentSubCategory.name}`,
+              has_children: nestedSubCat.has_children || false,
+            }));
+
+            newNestedSubCategories.push(...nestedWithMetadata);
+          }
+        }
+        
+        // Mark as fetched
+        setFetchedNestedSubCategoryIds(prev => new Set(prev).add(subcategoryId));
+      }
+    });
+
+    // Update the search index with new nested subcategories
+    if (newNestedSubCategories.length > 0) {
+      setAllNestedSubCategories(prev => {
+        const existingIds = new Set(prev.map(item => item.id));
+        const uniqueNew = newNestedSubCategories.filter(item => !existingIds.has(item.id));
+        
+        if (uniqueNew.length > 0) {
+          console.log(`📊 Added ${uniqueNew.length} nested subcategories to search index. Total nested: ${prev.length + uniqueNew.length}`);
+          return [...prev, ...uniqueNew];
+        }
+        return prev;
+      });
+    }
+
+    // Log progress
+    const totalSubcategories = subcategoryIdsToFetch.length;
+    const fetchedCount = fetchedNestedSubCategoryIds.size;
+    if (processedCount > 0) {
+      console.log(`🔄 Progress: ${fetchedCount}/${totalSubcategories} subcategories processed for nested data`);
+    }
+  }, [nestedHooks, subcategoryIdsToFetch, allCategoryHooks, fetchedNestedSubCategoryIds]);
+
+  // Handle fetching the next batch of subcategories if we have more than maxConcurrentFetches
+  useEffect(() => {
+    const totalSubcategories = subcategoryIdsToFetch.length;
+    const fetchedCount = fetchedNestedSubCategoryIds.size;
+    
+    if (totalSubcategories > maxConcurrentFetches && fetchedCount >= maxConcurrentFetches) {
+      // Move to the next batch
+      const nextBatchStart = fetchedCount;
+      const nextBatch = subcategoryIdsToFetch.slice(nextBatchStart, nextBatchStart + maxConcurrentFetches);
+      
+      if (nextBatch.length > 0) {
+        console.log(`🔄 Moving to next batch: ${nextBatchStart} to ${nextBatchStart + nextBatch.length}`);
+        // We would need to update the subcategoryIdsToFetch to trigger the next batch
+        // For now, we'll process the first batch only to avoid infinite loops
       }
     }
-  }, [selectedSubCategoryId, nestedSubCategories, subCategories, selectedCategoryId, fetchedNestedSubCategoryIds]);
+  }, [subcategoryIdsToFetch, fetchedNestedSubCategoryIds, maxConcurrentFetches]);
 
   // Add nested subcategories from current selection to search data
   useEffect(() => {
@@ -836,9 +894,34 @@ export default function StoreProducts() {
 
           {/* Debug info in development */}
           {process.env.NODE_ENV === 'development' && (
-            <div className="mt-2 text-xs text-gray-500">
+            <div className="mt-2 text-xs text-gray-500 space-y-1">
               <div>Search Index: {allCategoriesData.length} items</div>
               <div>Nested: {allNestedSubCategories.length}</div>
+              <div>Fetched: {fetchedNestedSubCategoryIds.size}/{subcategoryIdsToFetch.length} subcategories</div>
+              {subcategoryIdsToFetch.length > 0 && fetchedNestedSubCategoryIds.size < subcategoryIdsToFetch.length && (
+                <div className="text-blue-600">🔄 Fetching nested categories...</div>
+              )}
+              {subcategoryIdsToFetch.length > 0 && fetchedNestedSubCategoryIds.size === subcategoryIdsToFetch.length && (
+                <div className="text-green-600">✅ All nested categories loaded</div>
+              )}
+            </div>
+          )}
+
+          {/* Progress indicator for nested category fetching */}
+          {subcategoryIdsToFetch.length > 0 && fetchedNestedSubCategoryIds.size < subcategoryIdsToFetch.length && (
+            <div className="mt-2 text-xs text-blue-600">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+                <span>Loading nested categories... ({fetchedNestedSubCategoryIds.size}/{subcategoryIdsToFetch.length})</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
+                <div 
+                  className="bg-blue-600 h-1 rounded-full transition-all duration-300"
+                  style={{ 
+                    width: `${subcategoryIdsToFetch.length > 0 ? (fetchedNestedSubCategoryIds.size / subcategoryIdsToFetch.length) * 100 : 0}%` 
+                  }}
+                ></div>
+              </div>
             </div>
           )}
         </div>
