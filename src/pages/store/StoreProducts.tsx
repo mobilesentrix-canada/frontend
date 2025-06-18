@@ -7,14 +7,27 @@ import React, {
 } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { useProducts, useSubCategories, Product } from "@/hooks/useProducts";
+import {
+  useProducts,
+  useCategories,
+  useSubCategories,
+  Product,
+} from "@/hooks/useProducts";
 import { useCart, useWishlist } from "@/hooks/useCart";
 import {
   ShoppingCart,
   ChevronDown,
+  ChevronRight,
   Grid3X3,
   X,
   Heart,
@@ -22,12 +35,24 @@ import {
   ChevronLeft,
   Search,
   Minus,
+  ArrowRight,
+  Folder,
+  FolderOpen,
+  Menu,
   Filter,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { STATIC_CATEGORIES } from "@/db";
-import { TextField, InputAdornment, IconButton } from "@mui/material";
+import {
+  Tabs,
+  Tab,
+  Box,
+  TextField,
+  InputAdornment,
+  IconButton,
+} from "@mui/material";
+import { styled } from "@mui/material/styles";
 import {
   Sheet,
   SheetContent,
@@ -36,18 +61,31 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 
-interface CategoryItem {
-  id: number;
-  name: string;
-  type: "category" | "subcategory" | "nestedSubcategory";
-  fullPath: string;
-  searchTerms: string;
-  parentId?: number;
-  grandParentId?: number;
-}
+// Simple styled tabs
+const StyledTabs = styled(Tabs)({
+  minHeight: 40,
+  "& .MuiTabs-indicator": {
+    backgroundColor: "#dc2626",
+    height: 2,
+  },
+});
+
+const StyledTab = styled(Tab)({
+  textTransform: "none",
+  minWidth: 100,
+  fontWeight: 500,
+  fontSize: "14px",
+  color: "#6b7280",
+  "&.Mui-selected": {
+    color: "#dc2626",
+    fontWeight: 600,
+  },
+  "&:hover": {
+    color: "#374151",
+  },
+});
 
 export default function StoreProducts() {
-  // Basic state
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
     null
   );
@@ -57,160 +95,310 @@ export default function StoreProducts() {
   const [selectedNestedSubCategoryId, setSelectedNestedSubCategoryId] =
     useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-  const [localQuantities, setLocalQuantities] = useState<
-    Record<number, number>
-  >({});
   const [loadingProductId, setLoadingProductId] = useState<number | null>(null);
   const [updatingProductId, setUpdatingProductId] = useState<number | null>(
     null
   );
-
-  // Search data
-  const [allCategoriesData, setAllCategoriesData] = useState<CategoryItem[]>(
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [allNestedSubCategories, setAllNestedSubCategories] = useState<any[]>(
     []
   );
-  const [isLoading, setIsLoading] = useState(true);
+  const [fetchedNestedSubCategoryIds, setFetchedNestedSubCategoryIds] =
+    useState<Set<number>>(new Set());
+  const [isFetchingNested, setIsFetchingNested] = useState(false);
+
+  const [localQuantities, setLocalQuantities] = useState<
+    Record<number, number>
+  >({});
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const mobileSearchInputRef = useRef<HTMLInputElement>(null);
-  const { toast } = useToast();
 
-  // Hooks for UI display
-  const allCategoryHooks = STATIC_CATEGORIES.map((category) =>
-    useSubCategories(category.entity_id)
-  );
+  const { toast } = useToast();
+  const allCategoryHooks = STATIC_CATEGORIES.map((category) => {
+    try {
+      return useSubCategories(category.entity_id);
+    } catch (error) {
+      console.error(
+        `Error fetching subcategories for category ${category.entity_id}:`,
+        error
+      );
+      return { subCategories: [], isLoading: false, error };
+    }
+  });
 
   const selectedCategoryData = allCategoryHooks.find(
     (_, index) => STATIC_CATEGORIES[index].entity_id === selectedCategoryId
   );
   const subCategories = selectedCategoryData?.subCategories || [];
+  const subCategoriesLoading = selectedCategoryData?.isLoading || false;
 
-  const { subCategories: nestedSubCategories = [] } = useSubCategories(
+  const {
+    subCategories: nestedSubCategories = [],
+    isLoading: nestedSubCategoriesLoading = false,
+    error: nestedSubCategoriesError = null,
+  } = useSubCategories(
     selectedSubCategoryId && selectedSubCategoryId > 0
       ? selectedSubCategoryId
       : null
   );
 
-  // Fetch all category data
-  const fetchAllCategories = async () => {
-    setIsLoading(true);
-    const allData: CategoryItem[] = [];
-
-    try {
-      // Add main categories
-      STATIC_CATEGORIES.forEach((cat) => {
-        allData.push({
-          id: cat.entity_id,
-          name: cat.name,
-          type: "category",
-          fullPath: cat.name,
-          searchTerms: cat.name.toLowerCase(),
+  const subcategoriesWithChildren = useMemo(() => {
+    const allSubs: any[] = [];
+    allCategoryHooks.forEach((hookData, categoryIndex) => {
+      if (hookData?.subCategories && !hookData.isLoading) {
+        hookData.subCategories.forEach((subCat: any) => {
+          allSubs.push({
+            ...subCat,
+            parentCategoryId: STATIC_CATEGORIES[categoryIndex].entity_id,
+            parentCategoryName: STATIC_CATEGORIES[categoryIndex].name,
+          });
         });
-      });
+      }
+    });
 
-      // Fetch subcategories
-      for (const category of STATIC_CATEGORIES) {
+    return allSubs;
+  }, [allCategoryHooks]);
+
+  const nestedSubCategoryHooks = useMemo(() => {
+    if (subcategoriesWithChildren.length === 0) return [];
+    const subcategoriesToFetch = subcategoriesWithChildren.slice(0, 10);
+
+    return subcategoriesToFetch
+      .map((subCat) => {
         try {
-          const response = await fetch(
-            `/api/categories/${category.entity_id}/subcategories`
-          );
-          if (response.ok) {
-            const data = await response.json();
-            const subcategories = data.subcategories || [];
-
-            subcategories.forEach((subCat: any) => {
-              allData.push({
-                id: subCat.entity_id,
-                name: subCat.name,
-                type: "subcategory",
-                fullPath: `${category.name} > ${subCat.name}`,
-                searchTerms: `${category.name} ${subCat.name}`.toLowerCase(),
-                parentId: category.entity_id,
-              });
-            });
-
-            // Fetch nested subcategories
-            for (const subCat of subcategories) {
-              try {
-                const nestedResponse = await fetch(
-                  `/api/categories/${subCat.entity_id}/subcategories`
-                );
-                if (nestedResponse.ok) {
-                  const nestedData = await nestedResponse.json();
-                  const nestedSubcategories = nestedData.subcategories || [];
-
-                  nestedSubcategories.forEach((nestedSubCat: any) => {
-                    allData.push({
-                      id: nestedSubCat.entity_id,
-                      name: nestedSubCat.name,
-                      type: "nestedSubcategory",
-                      fullPath: `${category.name} > ${subCat.name} > ${nestedSubCat.name}`,
-                      searchTerms:
-                        `${category.name} ${subCat.name} ${nestedSubCat.name}`.toLowerCase(),
-                      parentId: subCat.entity_id,
-                      grandParentId: category.entity_id,
-                    });
-                  });
-                }
-              } catch (error) {
-                console.error(
-                  `Error fetching nested for ${subCat.name}:`,
-                  error
-                );
-              }
-            }
-          }
+          const hookResult = useSubCategories(subCat.entity_id);
+          return {
+            subcategoryId: subCat.entity_id,
+            parentCategoryId: subCat.parentCategoryId,
+            parentCategoryName: subCat.parentCategoryName,
+            subcategoryName: subCat.name,
+            ...hookResult,
+          };
         } catch (error) {
           console.error(
-            `Error fetching subcategories for ${category.name}:`,
+            `Error creating hook for subcategory ${subCat.name}:`,
             error
           );
+          return null;
         }
-      }
-
-      setAllCategoriesData(allData);
-      console.log(`Loaded ${allData.length} total categories for search`);
-    } catch (error) {
-      console.error("Error fetching categories:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      })
+      .filter(Boolean);
+  }, [subcategoriesWithChildren]);
 
   useEffect(() => {
-    fetchAllCategories();
-  }, []);
+    if (nestedSubCategoryHooks.length === 0) return;
 
-  // Search functionality
+    let newNestedSubCategories: any[] = [];
+    let foundAnyNested = false;
+
+    nestedSubCategoryHooks.forEach((hookData) => {
+      if (!hookData) return;
+      if (
+        hookData.subCategories &&
+        hookData.subCategories.length > 0 &&
+        !hookData.isLoading &&
+        !hookData.error &&
+        !fetchedNestedSubCategoryIds.has(hookData.subcategoryId)
+      ) {
+        foundAnyNested = true;
+        const nestedWithMetadata = hookData.subCategories.map(
+          (nestedSubCat: any) => ({
+            id: nestedSubCat.entity_id,
+            name: nestedSubCat.name,
+            type: "nestedSubcategory",
+            level: 3,
+            fullPath: `${hookData.parentCategoryName} > ${hookData.subcategoryName} > ${nestedSubCat.name}`,
+            parentId: hookData.subcategoryId,
+            grandParentId: hookData.parentCategoryId,
+            searchTerms:
+              `${hookData.parentCategoryName} ${hookData.subcategoryName} ${nestedSubCat.name}`.toLowerCase(),
+            description: `${nestedSubCat.name} in ${hookData.subcategoryName}`,
+            parent: `${hookData.parentCategoryName} > ${hookData.subcategoryName}`,
+            has_children: nestedSubCat.has_children || false,
+          })
+        );
+
+        newNestedSubCategories.push(...nestedWithMetadata);
+        setFetchedNestedSubCategoryIds((prev) =>
+          new Set(prev).add(hookData.subcategoryId)
+        );
+      }
+    });
+
+    if (newNestedSubCategories.length > 0) {
+      setAllNestedSubCategories((prev) => [...prev, ...newNestedSubCategories]);
+    } else if (foundAnyNested === false) {
+      console.log(
+        `ℹ️ No nested subcategories found in any of the ${nestedSubCategoryHooks.length} hooks checked`
+      );
+    }
+  }, [
+    nestedSubCategoryHooks,
+    allNestedSubCategories.length,
+    fetchedNestedSubCategoryIds,
+  ]);
+
+  useEffect(() => {
+    if (selectedSubCategoryId && nestedSubCategories.length > 0) {
+      const parentCategory = STATIC_CATEGORIES.find(
+        (cat) => cat.entity_id === selectedCategoryId
+      );
+      const parentSubCategory = subCategories.find(
+        (sub) => sub.entity_id === selectedSubCategoryId
+      );
+
+      if (parentCategory && parentSubCategory) {
+        const existingIds = new Set(
+          allNestedSubCategories.map((item) => item.id)
+        );
+        const newNestedData = nestedSubCategories
+          .filter((nested) => !existingIds.has(nested.entity_id))
+          .map((nestedSubCat) => ({
+            id: nestedSubCat.entity_id,
+            name: nestedSubCat.name,
+            type: "nestedSubcategory",
+            level: 3,
+            fullPath: `${parentCategory.name} > ${parentSubCategory.name} > ${nestedSubCat.name}`,
+            parentId: selectedSubCategoryId,
+            grandParentId: selectedCategoryId,
+            searchTerms:
+              `${parentCategory.name} ${parentSubCategory.name} ${nestedSubCat.name}`.toLowerCase(),
+            description: `${nestedSubCat.name} in ${parentSubCategory.name}`,
+            parent: `${parentCategory.name} > ${parentSubCategory.name}`,
+            has_children: nestedSubCat.has_children || false,
+          }));
+
+        if (newNestedData.length > 0) {
+          setAllNestedSubCategories((prev) => [...prev, ...newNestedData]);
+        }
+      }
+    }
+  }, [
+    selectedSubCategoryId,
+    nestedSubCategories,
+    subCategories,
+    selectedCategoryId,
+    allNestedSubCategories,
+  ]);
+
+  const allCategoriesData = useMemo(() => {
+    const allData: any[] = [];
+
+    STATIC_CATEGORIES.forEach((cat) => {
+      allData.push({
+        id: cat.entity_id,
+        name: cat.name,
+        type: "category",
+        level: 1,
+        fullPath: cat.name,
+        searchTerms: cat.name.toLowerCase(),
+        description: `Category: ${cat.name}`,
+        parent: null,
+        parentId: null,
+        grandParentId: null,
+        has_children: cat.has_children || false,
+      });
+    });
+
+    STATIC_CATEGORIES.forEach((category, index) => {
+      const hookData = allCategoryHooks[index];
+      if (hookData && !hookData.error && hookData.subCategories) {
+        hookData.subCategories.forEach((subCat: any) => {
+          allData.push({
+            id: subCat.entity_id,
+            name: subCat.name,
+            type: "subcategory",
+            level: 2,
+            fullPath: `${category.name} > ${subCat.name}`,
+            parentId: category.entity_id,
+            grandParentId: null,
+            searchTerms: `${category.name} ${subCat.name}`.toLowerCase(),
+            description: `Subcategory: ${subCat.name} in ${category.name}`,
+            parent: category.name,
+            has_children: subCat.has_children || false,
+          });
+        });
+      }
+    });
+
+    allData.push(...allNestedSubCategories);
+
+    console.log(
+      `📋 Search index contains: ${
+        allData.filter((d) => d.type === "category").length
+      } categories, ${
+        allData.filter((d) => d.type === "subcategory").length
+      } subcategories, ${
+        allData.filter((d) => d.type === "nestedSubcategory").length
+      } nested subcategories`
+    );
+
+    return allData;
+  }, [allCategoryHooks, allNestedSubCategories]);
+
   const filteredCategories = useMemo(() => {
     if (!searchQuery.trim()) return [];
 
     const query = searchQuery.toLowerCase().trim();
-    return allCategoriesData
-      .filter(
-        (item) =>
-          item.name.toLowerCase().includes(query) ||
-          item.searchTerms.includes(query) ||
-          item.fullPath.toLowerCase().includes(query)
-      )
+    const words = query.split(" ").filter((word) => word.length > 0);
+
+    console.log(
+      `🔍 Searching for: "${query}" in ${allCategoriesData.length} items`
+    );
+
+    const results = allCategoriesData
+      .filter((item) => {
+        const matches = words.some(
+          (word) =>
+            item.searchTerms.includes(word) ||
+            item.name.toLowerCase().includes(word) ||
+            item.fullPath.toLowerCase().includes(word)
+        );
+
+        if (matches && item.type === "nestedSubcategory") {
+          console.log(
+            `✅ Found nested subcategory match: ${item.name} (${item.fullPath})`
+          );
+        }
+
+        return matches;
+      })
       .sort((a, b) => {
-        const aExact = a.name.toLowerCase() === query;
-        const bExact = b.name.toLowerCase() === query;
-        if (aExact && !bExact) return -1;
-        if (!aExact && bExact) return 1;
-        return a.name.length - b.name.length;
+        const aExactMatch = a.name.toLowerCase() === query;
+        const bExactMatch = b.name.toLowerCase() === query;
+
+        if (aExactMatch && !bExactMatch) return -1;
+        if (!aExactMatch && bExactMatch) return 1;
+
+        const aStartsWithQuery = a.name.toLowerCase().startsWith(query);
+        const bStartsWithQuery = b.name.toLowerCase().startsWith(query);
+
+        if (aStartsWithQuery && !bStartsWithQuery) return -1;
+        if (!aStartsWithQuery && bStartsWithQuery) return 1;
+        return a.level - b.level;
       });
+    return results;
   }, [allCategoriesData, searchQuery]);
 
-  // Product fetching
   const productParams = useMemo(() => {
-    const params: any = { page: currentPage, limit: 12 };
-    if (selectedNestedSubCategoryId)
+    const params: any = {
+      page: currentPage,
+      limit: 12,
+    };
+
+    if (selectedNestedSubCategoryId && selectedNestedSubCategoryId > 0) {
       params.categoryId = selectedNestedSubCategoryId;
-    else if (selectedSubCategoryId) params.categoryId = selectedSubCategoryId;
-    else if (selectedCategoryId) params.categoryId = selectedCategoryId;
+    } else if (selectedSubCategoryId && selectedSubCategoryId > 0) {
+      params.categoryId = selectedSubCategoryId;
+    } else if (selectedCategoryId && selectedCategoryId > 0) {
+      params.categoryId = selectedCategoryId;
+    } else {
+      console.log("🔍 Fetching all products");
+    }
+
     return params;
   }, [
     currentPage,
@@ -222,8 +410,10 @@ export default function StoreProducts() {
   const {
     products = [],
     pagination,
-    isLoading: productsLoading,
+    isLoading: productsLoading = false,
+    error: productsError = null,
   } = useProducts(productParams);
+
   const {
     addToCart,
     count: cartCount = 0,
@@ -231,12 +421,26 @@ export default function StoreProducts() {
     updateCartItem,
     removeCartItem,
   } = useCart();
-  const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
 
-  // Helper functions
+  const {
+    addToWishlist,
+    removeFromWishlist,
+    isInWishlist,
+    isAddingToWishlist = false,
+    isRemovingFromWishlist = false,
+  } = useWishlist();
+
+  const categories = STATIC_CATEGORIES.map((cat) => ({
+    id: cat.entity_id.toString(),
+    name: cat.name,
+    has_children: cat.has_children,
+    image_url: cat.image_url,
+  }));
+
   const getCartItemForProduct = useCallback(
-    (productId: number) =>
-      cartItems.find((item) => item.product.id === productId),
+    (productId: number) => {
+      return cartItems.find((item) => item.product.id === productId);
+    },
     [cartItems]
   );
 
@@ -249,7 +453,9 @@ export default function StoreProducts() {
   );
 
   const getLocalQuantity = useCallback(
-    (productId: number) => localQuantities[productId] || 1,
+    (productId: number) => {
+      return localQuantities[productId] || 1;
+    },
     [localQuantities]
   );
 
@@ -257,15 +463,26 @@ export default function StoreProducts() {
     (productId: number, quantity: number) => {
       if (quantity < 1) quantity = 1;
       if (quantity > 99) quantity = 99;
-      setLocalQuantities((prev) => ({ ...prev, [productId]: quantity }));
+
+      setLocalQuantities((prev) => ({
+        ...prev,
+        [productId]: quantity,
+      }));
     },
     []
   );
 
-  // Event handlers
   const handleAddToCart = useCallback(
     async (product: Product) => {
-      if (!product?.id) return;
+      if (!product || !product.id) {
+        toast({
+          title: "Error",
+          description: "Invalid product data",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const quantityToAdd = getLocalQuantity(product.id);
       setLoadingProductId(product.id);
 
@@ -276,8 +493,9 @@ export default function StoreProducts() {
             onSuccess: () => {
               toast({
                 title: "Added to cart",
-                description: `${quantityToAdd} x ${product.name} added`,
+                description: `${quantityToAdd} x ${product.name} added to your cart`,
               });
+
               setLocalQuantities((prev) => {
                 const newState = { ...prev };
                 delete newState[product.id];
@@ -287,7 +505,7 @@ export default function StoreProducts() {
             onError: (error: any) => {
               toast({
                 title: "Error",
-                description: error?.message || "Failed to add to cart",
+                description: error?.message || "Failed to add product to cart",
                 variant: "destructive",
               });
             },
@@ -296,7 +514,7 @@ export default function StoreProducts() {
       } catch (error: any) {
         toast({
           title: "Error",
-          description: error?.message || "Failed to add to cart",
+          description: error?.message || "Failed to add product to cart",
           variant: "destructive",
         });
       } finally {
@@ -308,27 +526,13 @@ export default function StoreProducts() {
 
   const handleUpdateCartQuantity = useCallback(
     async (product: Product, newQuantity: number) => {
-      if (!product?.id) return;
+      if (!product || !product.id) return;
+
       const cartItem = getCartItemForProduct(product.id);
       if (!cartItem) return;
 
       if (newQuantity < 1) {
-        setUpdatingProductId(product.id);
-        try {
-          await removeCartItem(cartItem.id);
-          toast({
-            title: "Removed from cart",
-            description: `${product.name} removed`,
-          });
-        } catch (error: any) {
-          toast({
-            title: "Error",
-            description: "Failed to remove from cart",
-            variant: "destructive",
-          });
-        } finally {
-          setUpdatingProductId(null);
-        }
+        handleRemoveFromCart(product);
         return;
       }
 
@@ -342,58 +546,89 @@ export default function StoreProducts() {
       } catch (error: any) {
         toast({
           title: "Error",
-          description: "Failed to update cart",
+          description: error?.message || "Failed to update cart",
           variant: "destructive",
         });
       } finally {
         setUpdatingProductId(null);
       }
     },
-    [getCartItemForProduct, updateCartItem, removeCartItem, toast]
+    [getCartItemForProduct, updateCartItem, toast]
+  );
+
+  const handleRemoveFromCart = useCallback(
+    async (product: Product) => {
+      if (!product || !product.id) return;
+
+      const cartItem = getCartItemForProduct(product.id);
+      if (!cartItem) return;
+
+      setUpdatingProductId(product.id);
+      try {
+        await removeCartItem(cartItem.id);
+        toast({
+          title: "Removed from cart",
+          description: `${product.name} has been removed from your cart`,
+        });
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error?.message || "Failed to remove from cart",
+          variant: "destructive",
+        });
+      } finally {
+        setUpdatingProductId(null);
+      }
+    },
+    [getCartItemForProduct, removeCartItem, toast]
   );
 
   const handleWishlistToggle = useCallback(
     async (product: Product) => {
-      if (!product?.id) return;
-      const productId = product.id;
+      if (!product || !product.id) return;
 
+      const productId = product.id;
       try {
         if (isInWishlist(productId)) {
           await removeFromWishlist(productId, {
-            onSuccess: () =>
+            onSuccess: () => {
               toast({
                 title: "Removed from wishlist",
-                description: `${product.name} removed`,
-              }),
-            onError: (error: any) =>
+                description: `${product.name} has been removed from your wishlist`,
+              });
+            },
+            onError: (error: any) => {
               toast({
                 title: "Error",
-                description: "Failed to remove from wishlist",
+                description: error?.message || "Failed to remove from wishlist",
                 variant: "destructive",
-              }),
+              });
+            },
           });
         } else {
           await addToWishlist(
             { product_id: productId },
             {
-              onSuccess: () =>
+              onSuccess: () => {
                 toast({
                   title: "Added to wishlist",
-                  description: `${product.name} added`,
-                }),
-              onError: (error: any) =>
+                  description: `${product.name} has been added to your wishlist`,
+                });
+              },
+              onError: (error: any) => {
                 toast({
                   title: "Error",
-                  description: "Failed to add to wishlist",
+                  description: error?.message || "Failed to add to wishlist",
                   variant: "destructive",
-                }),
+                });
+              },
             }
           );
         }
       } catch (error: any) {
         toast({
           title: "Error",
-          description: "Failed to update wishlist",
+          description: error?.message || "Failed to update wishlist",
           variant: "destructive",
         });
       }
@@ -401,148 +636,294 @@ export default function StoreProducts() {
     [isInWishlist, removeFromWishlist, addToWishlist, toast]
   );
 
-  const handleSearchResultClick = useCallback((item: CategoryItem) => {
+  const handleCategoryChange = useCallback(
+    (event: React.SyntheticEvent, newValue: string) => {
+      if (newValue === "all") {
+        setSelectedCategoryId(null);
+        setSelectedSubCategoryId(null);
+        setSelectedNestedSubCategoryId(null);
+        setExpandedCategory(null);
+      } else {
+        const numCategoryId = parseInt(newValue);
+        if (!isNaN(numCategoryId)) {
+          setSelectedCategoryId(numCategoryId);
+          setSelectedSubCategoryId(null);
+          setSelectedNestedSubCategoryId(null);
+          setExpandedCategory(newValue);
+        }
+      }
+      setCurrentPage(1);
+      setSearchQuery("");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    []
+  );
+
+  const handleSubCategoryClick = useCallback(
+    (subCategoryId: number) => {
+      if (!subCategoryId || subCategoryId <= 0) return;
+
+      if (selectedSubCategoryId === subCategoryId) {
+        setSelectedSubCategoryId(null);
+        setSelectedNestedSubCategoryId(null);
+      } else {
+        setSelectedSubCategoryId(subCategoryId);
+        setSelectedNestedSubCategoryId(null);
+      }
+      setCurrentPage(1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    [selectedSubCategoryId]
+  );
+
+  const handleNestedSubCategoryClick = useCallback(
+    (nestedSubCategoryId: number) => {
+      if (!nestedSubCategoryId || nestedSubCategoryId <= 0) return;
+      setSelectedNestedSubCategoryId(nestedSubCategoryId);
+      setCurrentPage(1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    []
+  );
+
+  const handleSearchResultClick = useCallback((item: any) => {
+    if (!item || !item.id) return;
+    setCurrentPage(1);
+
     if (item.type === "category") {
       setSelectedCategoryId(item.id);
       setSelectedSubCategoryId(null);
       setSelectedNestedSubCategoryId(null);
+      setExpandedCategory(item.id.toString());
     } else if (item.type === "subcategory") {
-      setSelectedCategoryId(item.parentId || null);
+      setSelectedCategoryId(item.parentId);
       setSelectedSubCategoryId(item.id);
       setSelectedNestedSubCategoryId(null);
+      setExpandedCategory(item.parentId?.toString());
     } else if (item.type === "nestedSubcategory") {
-      setSelectedCategoryId(item.grandParentId || null);
-      setSelectedSubCategoryId(item.parentId || null);
+      setSelectedCategoryId(item.grandParentId);
+      setSelectedSubCategoryId(item.parentId);
       setSelectedNestedSubCategoryId(item.id);
+      setExpandedCategory(item.grandParentId?.toString());
     }
-    setSearchQuery("");
-    setCurrentPage(1);
+
+    setTimeout(() => {
+      setSearchQuery("");
+    }, 100);
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
   const clearFilters = useCallback(() => {
     setSelectedCategoryId(null);
     setSelectedSubCategoryId(null);
     setSelectedNestedSubCategoryId(null);
+    setExpandedCategory(null);
     setSearchQuery("");
     setCurrentPage(1);
     setIsMobileSidebarOpen(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
+
+  const handleSearchChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const newValue = e.target.value;
+      setSearchQuery(newValue);
+
+      setTimeout(() => {
+        if (searchInputRef.current) {
+          searchInputRef.current.focus();
+        }
+        if (mobileSearchInputRef.current) {
+          mobileSearchInputRef.current.focus();
+        }
+      }, 0);
+    },
+    []
+  );
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery("");
+    setCurrentPage(1);
+  }, []);
+
+  const handleMobileCategorySelect = useCallback(
+    (categoryId: number | null) => {
+      setSelectedCategoryId(categoryId);
+      setSelectedSubCategoryId(null);
+      setSelectedNestedSubCategoryId(null);
+      setExpandedCategory(categoryId?.toString() || null);
+      setCurrentPage(1);
+      setSearchQuery("");
+      setIsMobileSidebarOpen(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    []
+  );
+
+  const handleMobileSubCategorySelect = useCallback((subCategoryId: number) => {
+    if (!subCategoryId || subCategoryId <= 0) return;
+    setSelectedSubCategoryId(subCategoryId);
+    setSelectedNestedSubCategoryId(null);
+    setCurrentPage(1);
+    setIsMobileSidebarOpen(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  const handleMobileNestedSubCategorySelect = useCallback(
+    (nestedSubCategoryId: number) => {
+      if (!nestedSubCategoryId || nestedSubCategoryId <= 0) return;
+      setSelectedNestedSubCategoryId(nestedSubCategoryId);
+      setCurrentPage(1);
+      setIsMobileSidebarOpen(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    []
+  );
 
   const SidebarContent = React.memo(
     ({ isMobile = false }: { isMobile?: boolean }) => (
       <div className="h-full flex flex-col">
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-gray-200 flex-shrink-0">
           <h2 className="font-semibold text-gray-900 mb-4">Categories</h2>
 
-          <TextField
-            inputRef={isMobile ? mobileSearchInputRef : searchInputRef}
-            placeholder="Search categories..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            size="small"
-            fullWidth
-            variant="outlined"
-            disabled={isLoading}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <Search className="w-4 h-4 text-gray-400" />
-                </InputAdornment>
-              ),
-              endAdornment: searchQuery ? (
-                <InputAdornment position="end">
-                  <IconButton onClick={() => setSearchQuery("")} size="small">
-                    <X className="w-4 h-4" />
-                  </IconButton>
-                </InputAdornment>
-              ) : null,
-            }}
-          />
-
-          {isLoading && (
-            <div className="mt-2 text-xs text-blue-600">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
-                <span>Loading all categories...</span>
-              </div>
-            </div>
-          )}
-
-          {!isLoading && (
-            <div className="mt-2 text-xs text-green-600">
-              ✅ {allCategoriesData.length} categories loaded
-            </div>
-          )}
+          <div className="relative">
+            <TextField
+              inputRef={isMobile ? mobileSearchInputRef : searchInputRef}
+              type="text"
+              placeholder="Search categories..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+              size="small"
+              fullWidth
+              variant="outlined"
+              autoComplete="off"
+              spellCheck={false}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search className="w-4 h-4 text-gray-400" />
+                  </InputAdornment>
+                ),
+                endAdornment: searchQuery ? (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={handleClearSearch}
+                      size="small"
+                      aria-label="Clear search"
+                      sx={{ color: "gray" }}
+                    >
+                      <X className="w-4 h-4" />
+                    </IconButton>
+                  </InputAdornment>
+                ) : null,
+                sx: {
+                  height: "40px",
+                  fontSize: "14px",
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: "6px",
+                  },
+                },
+              }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  "& fieldset": {
+                    borderColor: "#e5e7eb",
+                  },
+                  "&:hover fieldset": {
+                    borderColor: "#d1d5db",
+                  },
+                  "&.Mui-focused fieldset": {
+                    borderColor: "#dc2626",
+                    borderWidth: "1px",
+                  },
+                },
+              }}
+            />
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          {/* Search Results */}
           {searchQuery && filteredCategories.length > 0 && (
-            <div className="space-y-1">
+            <div className="mb-4">
               <div className="text-xs text-gray-500 mb-2">
                 Search Results ({filteredCategories.length})
               </div>
-              {filteredCategories.map((item) => (
-                <div
-                  key={`${item.type}-${item.id}`}
-                  onClick={() => {
-                    handleSearchResultClick(item);
-                    if (isMobile) setIsMobileSidebarOpen(false);
-                  }}
-                  className="p-3 hover:bg-gray-50 rounded cursor-pointer border border-gray-100"
-                >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-gray-900 truncate">
-                        {item.name}
+              <div className="space-y-1">
+                {filteredCategories.map((item) => (
+                  <div
+                    key={`${item.type}-${item.id}`}
+                    onClick={() => {
+                      handleSearchResultClick(item);
+                      if (isMobile) setIsMobileSidebarOpen(false);
+                    }}
+                    className="p-3 hover:bg-gray-50 rounded cursor-pointer text-sm transition-colors border border-gray-100 hover:border-gray-200"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900 truncate">
+                          {item.name}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1 truncate">
+                          {item.description}
+                        </div>
+                        <div className="text-xs text-blue-600 mt-1 truncate">
+                          {item.fullPath}
+                        </div>
                       </div>
-                      <div className="text-xs text-blue-600 mt-1 truncate">
-                        {item.fullPath}
+                      <div className="ml-2 flex-shrink-0">
+                        <span
+                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            item.type === "category"
+                              ? "bg-blue-100 text-blue-800"
+                              : item.type === "subcategory"
+                              ? "bg-green-100 text-green-800"
+                              : "bg-purple-100 text-purple-800"
+                          }`}
+                        >
+                          {item.type === "category"
+                            ? "Category"
+                            : item.type === "subcategory"
+                            ? "Subcategory"
+                            : "Nested"}
+                        </span>
                       </div>
                     </div>
-                    <Badge
-                      className={`ml-2 text-xs ${
-                        item.type === "category"
-                          ? "bg-blue-100 text-blue-800"
-                          : item.type === "subcategory"
-                          ? "bg-green-100 text-green-800"
-                          : "bg-purple-100 text-purple-800"
-                      }`}
-                    >
-                      {item.type === "category"
-                        ? "Category"
-                        : item.type === "subcategory"
-                        ? "Sub"
-                        : "Nested"}
-                    </Badge>
+                    {/* Show if has children */}
+                    {item.has_children && (
+                      <div className="flex items-center mt-2 text-xs text-gray-400">
+                        <Folder className="w-3 h-3 mr-1" />
+                        Has subcategories
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
 
-          {/* No search results */}
-          {searchQuery && filteredCategories.length === 0 && !isLoading && (
-            <div className="text-center py-8">
+          {searchQuery && filteredCategories.length === 0 && (
+            <div className="mb-4 text-center py-8">
               <div className="text-sm text-gray-500">
                 No categories found for "{searchQuery}"
               </div>
               <button
-                onClick={() => setSearchQuery("")}
-                className="text-xs text-blue-600 mt-2"
+                onClick={handleClearSearch}
+                className="text-xs text-blue-600 hover:text-blue-800 mt-2"
               >
                 Clear search
               </button>
             </div>
           )}
 
-          {/* Category Tree */}
           {!searchQuery && (
             <div className="space-y-1">
               <div
-                onClick={() => (isMobile ? clearFilters() : clearFilters())}
+                onClick={() =>
+                  isMobile ? handleMobileCategorySelect(null) : clearFilters()
+                }
                 className={cn(
-                  "p-2 rounded cursor-pointer text-sm",
+                  "p-2 rounded cursor-pointer text-sm transition-colors",
                   !selectedCategoryId
                     ? "bg-red-50 text-red-700 font-medium"
                     : "text-gray-700 hover:bg-gray-50"
@@ -551,30 +932,33 @@ export default function StoreProducts() {
                 All Categories
               </div>
 
-              {STATIC_CATEGORIES.map((category, index) => {
-                const categoryId = category.entity_id;
-                const hookData = allCategoryHooks[index];
-                const isExpanded = selectedCategoryId === categoryId;
+              {categories.map((category) => {
+                const categoryId = parseInt(category.id);
+                const hookData = allCategoryHooks.find(
+                  (_, index) =>
+                    STATIC_CATEGORIES[index].entity_id === categoryId
+                );
 
                 return (
-                  <div key={category.entity_id}>
+                  <div key={category.id} className="space-y-1">
                     <div
                       onClick={() => {
                         if (isMobile) {
-                          setSelectedCategoryId(categoryId);
-                          setSelectedSubCategoryId(null);
-                          setSelectedNestedSubCategoryId(null);
-                          setIsMobileSidebarOpen(false);
+                          handleMobileCategorySelect(categoryId);
                         } else {
-                          setSelectedCategoryId(isExpanded ? null : categoryId);
-                          setSelectedSubCategoryId(null);
-                          setSelectedNestedSubCategoryId(null);
+                          if (selectedCategoryId === categoryId) {
+                            setSelectedCategoryId(null);
+                            setSelectedSubCategoryId(null);
+                            setSelectedNestedSubCategoryId(null);
+                            setExpandedCategory(null);
+                          } else {
+                            handleCategoryChange({} as any, category.id);
+                          }
                         }
-                        setCurrentPage(1);
                       }}
                       className={cn(
-                        "p-2 rounded cursor-pointer text-sm flex items-center justify-between",
-                        isExpanded
+                        "p-2 rounded cursor-pointer text-sm flex items-center justify-between transition-colors",
+                        selectedCategoryId === categoryId
                           ? "bg-red-50 text-red-700 font-medium"
                           : "text-gray-700 hover:bg-gray-50"
                       )}
@@ -583,42 +967,40 @@ export default function StoreProducts() {
                       {category.has_children && (
                         <ChevronDown
                           className={cn(
-                            "w-4 h-4 transition-transform",
-                            isExpanded && "rotate-180"
+                            "w-4 h-4 transition-transform duration-200",
+                            selectedCategoryId === categoryId && "rotate-180"
                           )}
                         />
                       )}
                     </div>
 
-                    {isExpanded && (
-                      <div className="ml-4 space-y-1 mt-1">
-                        {hookData?.isLoading ? (
+                    {selectedCategoryId === categoryId && (
+                      <div className="ml-4 space-y-1 animate-in slide-in-from-top-2 duration-200">
+                        {subCategoriesLoading ? (
                           <div className="space-y-1">
                             {[1, 2, 3].map((i) => (
                               <Skeleton key={i} className="h-8 w-full" />
                             ))}
                           </div>
+                        ) : hookData?.error ? (
+                          <div className="text-red-500 text-xs p-2">
+                            Error loading subcategories
+                          </div>
                         ) : (
                           subCategories.map((subCat) => (
-                            <div key={subCat.entity_id}>
+                            <div key={subCat.entity_id} className="space-y-1">
                               <div
                                 onClick={() => {
                                   if (isMobile) {
-                                    setSelectedSubCategoryId(subCat.entity_id);
-                                    setSelectedNestedSubCategoryId(null);
-                                    setIsMobileSidebarOpen(false);
-                                  } else {
-                                    setSelectedSubCategoryId(
-                                      selectedSubCategoryId === subCat.entity_id
-                                        ? null
-                                        : subCat.entity_id
+                                    handleMobileSubCategorySelect(
+                                      subCat.entity_id
                                     );
-                                    setSelectedNestedSubCategoryId(null);
+                                  } else {
+                                    handleSubCategoryClick(subCat.entity_id);
                                   }
-                                  setCurrentPage(1);
                                 }}
                                 className={cn(
-                                  "p-1.5 rounded cursor-pointer text-sm flex items-center justify-between",
+                                  "p-1.5 rounded cursor-pointer text-sm flex items-center justify-between transition-colors",
                                   selectedSubCategoryId === subCat.entity_id
                                     ? "bg-red-50 text-red-700 font-medium"
                                     : "text-gray-600 hover:bg-gray-50"
@@ -628,7 +1010,7 @@ export default function StoreProducts() {
                                 {subCat.has_children && (
                                   <ChevronDown
                                     className={cn(
-                                      "w-3 h-3 transition-transform",
+                                      "w-3 h-3 transition-transform duration-200",
                                       selectedSubCategoryId ===
                                         subCat.entity_id && "rotate-180"
                                     )}
@@ -637,29 +1019,45 @@ export default function StoreProducts() {
                               </div>
 
                               {selectedSubCategoryId === subCat.entity_id && (
-                                <div className="ml-4 space-y-1 mt-1">
-                                  {nestedSubCategories.map((nested) => (
-                                    <div
-                                      key={nested.entity_id}
-                                      onClick={() => {
-                                        setSelectedNestedSubCategoryId(
-                                          nested.entity_id
-                                        );
-                                        setCurrentPage(1);
-                                        if (isMobile)
-                                          setIsMobileSidebarOpen(false);
-                                      }}
-                                      className={cn(
-                                        "p-1 rounded cursor-pointer text-xs",
-                                        selectedNestedSubCategoryId ===
-                                          nested.entity_id
-                                          ? "bg-red-50 text-red-700 font-medium"
-                                          : "text-gray-600 hover:bg-gray-50"
-                                      )}
-                                    >
-                                      {nested.name}
+                                <div className="ml-4 space-y-1 animate-in slide-in-from-top-2 duration-200">
+                                  {nestedSubCategoriesLoading ? (
+                                    <div className="space-y-1">
+                                      {[1, 2].map((i) => (
+                                        <Skeleton
+                                          key={i}
+                                          className="h-6 w-full"
+                                        />
+                                      ))}
                                     </div>
-                                  ))}
+                                  ) : nestedSubCategoriesError ? (
+                                    <div className="text-red-500 text-xs p-2">
+                                      Error loading nested categories
+                                    </div>
+                                  ) : (
+                                    nestedSubCategories.map((nestedSubCat) => (
+                                      <div
+                                        key={nestedSubCat.entity_id}
+                                        onClick={() =>
+                                          isMobile
+                                            ? handleMobileNestedSubCategorySelect(
+                                                nestedSubCat.entity_id
+                                              )
+                                            : handleNestedSubCategoryClick(
+                                                nestedSubCat.entity_id
+                                              )
+                                        }
+                                        className={cn(
+                                          "p-1 rounded cursor-pointer text-xs transition-colors",
+                                          selectedNestedSubCategoryId ===
+                                            nestedSubCat.entity_id
+                                            ? "bg-red-50 text-red-700 font-medium"
+                                            : "text-gray-600 hover:bg-gray-50"
+                                        )}
+                                      >
+                                        {nestedSubCat.name}
+                                      </div>
+                                    ))
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -677,14 +1075,85 @@ export default function StoreProducts() {
     )
   );
 
+  const handlePageChange = useCallback(
+    (page: number) => {
+      if (pagination && (page < 1 || page > pagination.pages)) {
+        return;
+      }
+      setCurrentPage(page);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    [pagination]
+  );
+
+  const generatePaginationNumbers = useCallback(() => {
+    if (!pagination || pagination.pages <= 1) return [];
+
+    const totalPages = pagination.pages;
+    const current = currentPage;
+    const delta = 2;
+
+    let pages: (number | string)[] = [];
+
+    if (totalPages <= 7) {
+      pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+    } else {
+      if (current <= delta + 1) {
+        pages = [
+          ...Array.from({ length: delta + 2 }, (_, i) => i + 1),
+          "...",
+          totalPages,
+        ];
+      } else if (current >= totalPages - delta) {
+        pages = [
+          1,
+          "...",
+          ...Array.from(
+            { length: delta + 2 },
+            (_, i) => totalPages - delta - 1 + i
+          ),
+        ];
+      } else {
+        pages = [
+          1,
+          "...",
+          ...Array.from(
+            { length: delta * 2 + 1 },
+            (_, i) => current - delta + i
+          ),
+          "...",
+          totalPages,
+        ];
+      }
+    }
+
+    return pages;
+  }, [pagination, currentPage]);
+
+  // Error boundary for rendering
+  if (productsError) {
+    return (
+      <div className="px-4 py-6">
+        <div className="text-center py-12">
+          <p className="text-red-500">
+            Error loading products: {productsError.message}
+          </p>
+          <Button onClick={() => window.location.reload()} className="mt-4">
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col lg:flex-row h-full bg-gray-50">
       {/* Desktop Sidebar */}
-      <div className="hidden lg:block w-64 bg-white border-r border-gray-200 h-full">
+      <div className="hidden lg:block w-64 bg-white border-r border-gray-200 flex-shrink-0 h-full">
         <SidebarContent />
       </div>
 
-      {/* Mobile Header */}
+      {/* Mobile Header with Filter Button */}
       <div className="lg:hidden bg-white border-b border-gray-200 p-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold text-gray-900">Products</h1>
@@ -693,7 +1162,7 @@ export default function StoreProducts() {
               <Button variant="outline" size="sm" className="relative">
                 <ShoppingCart className="w-4 h-4" />
                 {cartCount > 0 && (
-                  <Badge className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full px-1.5 py-0.5 text-xs">
+                  <Badge className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full px-1.5 py-0.5 text-xs min-w-[1.25rem] h-5">
                     {cartCount}
                   </Badge>
                 )}
@@ -718,9 +1187,56 @@ export default function StoreProducts() {
             </Sheet>
           </div>
         </div>
+
+        {/* Mobile breadcrumb */}
+        {(selectedCategoryId ||
+          selectedSubCategoryId ||
+          selectedNestedSubCategoryId) && (
+          <div className="mt-3 flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              {selectedCategoryId && (
+                <span className="font-medium">
+                  {
+                    STATIC_CATEGORIES.find(
+                      (cat) => cat.entity_id === selectedCategoryId
+                    )?.name
+                  }
+                </span>
+              )}
+              {selectedSubCategoryId && (
+                <span>
+                  {" > "}
+                  <span className="font-medium">
+                    {
+                      subCategories.find(
+                        (sub) => sub.entity_id === selectedSubCategoryId
+                      )?.name
+                    }
+                  </span>
+                </span>
+              )}
+              {selectedNestedSubCategoryId && (
+                <span>
+                  {" > "}
+                  <span className="font-medium">
+                    {
+                      nestedSubCategories.find(
+                        (nested) =>
+                          nested.entity_id === selectedNestedSubCategoryId
+                      )?.name
+                    }
+                  </span>
+                </span>
+              )}
+            </div>
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* Main Content */}
+      {/* Main Content Area */}
       <div className="flex-1 overflow-auto">
         <div className="p-4 lg:p-6">
           {/* Desktop Header */}
@@ -748,6 +1264,15 @@ export default function StoreProducts() {
             </Link>
           </div>
 
+          {/* Mobile Product Count */}
+          <div className="lg:hidden mb-4">
+            {pagination && (
+              <p className="text-sm text-gray-500">
+                {pagination.total || 0} products found
+              </p>
+            )}
+          </div>
+
           {/* Products Grid */}
           {productsLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
@@ -768,235 +1293,337 @@ export default function StoreProducts() {
               ))}
             </div>
           ) : products.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
-              {products.map((product) => {
-                const isThisProductLoading = loadingProductId === product.id;
-                const isThisProductUpdating = updatingProductId === product.id;
-                const cartQuantity = getProductQuantityInCart(product.id);
-                const isInCart = cartQuantity > 0;
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
+                {products.map((product) => {
+                  const isThisProductLoading = loadingProductId === product.id;
+                  const isThisProductUpdating =
+                    updatingProductId === product.id;
+                  const cartQuantity = getProductQuantityInCart(product.id);
+                  const isInCart = cartQuantity > 0;
 
-                return (
-                  <Card
-                    key={product.id}
-                    className="hover:shadow-lg transition-shadow overflow-hidden"
-                  >
-                    <div className="aspect-square relative overflow-hidden bg-gray-50">
-                      {product.image ? (
-                        <img
-                          src={product.image}
-                          alt={product.name}
-                          className="w-full h-full object-contain hover:scale-105 transition-transform duration-300"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Grid3X3 className="w-8 h-8 text-gray-400" />
+                  return (
+                    <Card
+                      key={product.id}
+                      className="hover:shadow-lg transition-shadow overflow-hidden"
+                    >
+                      <div className="aspect-square relative overflow-hidden bg-gray-50">
+                        {product.image ? (
+                          <img
+                            src={product.image}
+                            alt={product.name}
+                            className="w-full h-full object-contain hover:scale-105 transition-transform duration-300"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = "none";
+                              const fallback =
+                                target.nextElementSibling as HTMLElement;
+                              if (fallback) {
+                                fallback.style.display = "flex";
+                              }
+                            }}
+                          />
+                        ) : null}
+
+                        <div
+                          className={`w-full h-full flex items-center justify-center ${
+                            product.image ? "hidden" : "flex"
+                          }`}
+                        >
+                          <div className="text-center p-4">
+                            <div className="w-12 h-12 lg:w-16 lg:h-16 mx-auto mb-2 bg-white rounded-full flex items-center justify-center shadow-sm">
+                              <Grid3X3 className="w-6 h-6 lg:w-8 lg:h-8 text-gray-400" />
+                            </div>
+                            <p className="text-xs text-gray-500 font-medium">
+                              {product.manufacturer}
+                            </p>
+                          </div>
                         </div>
-                      )}
 
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className={cn(
-                          "absolute top-2 left-2 h-8 w-8 p-0 rounded-full bg-white shadow-sm",
-                          isInWishlist(product.id) && "text-red-500"
-                        )}
-                        onClick={() => handleWishlistToggle(product)}
-                      >
-                        <Heart
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           className={cn(
-                            "w-4 h-4",
-                            isInWishlist(product.id) && "fill-current"
+                            "absolute top-2 left-2 h-7 w-7 lg:h-8 lg:w-8 p-0 rounded-full bg-white shadow-sm",
+                            isInWishlist(product.id) && "text-red-500"
                           )}
-                        />
-                      </Button>
+                          onClick={() => handleWishlistToggle(product)}
+                          disabled={
+                            isAddingToWishlist || isRemovingFromWishlist
+                          }
+                        >
+                          <Heart
+                            className={cn(
+                              "w-3 h-3 lg:w-4 lg:h-4",
+                              isInWishlist(product.id) && "fill-current"
+                            )}
+                          />
+                        </Button>
 
-                      {isInCart && (
-                        <div className="absolute bottom-2 right-2">
-                          <Badge className="bg-green-500 text-white text-xs">
-                            {cartQuantity}
+                        {isInCart && (
+                          <div className="absolute bottom-2 right-2">
+                            <Badge className="bg-green-500 text-white text-xs">
+                              {cartQuantity}
+                            </Badge>
+                          </div>
+                        )}
+                      </div>
+
+                      <CardHeader className="p-3 lg:p-4 pb-2 lg:pb-3">
+                        <CardTitle className="text-sm lg:text-base leading-tight line-clamp-2">
+                          {product.name}
+                        </CardTitle>
+                        {product.sku && (
+                          <Badge variant="outline" className="text-xs w-fit">
+                            SKU: {product.sku}
                           </Badge>
-                        </div>
-                      )}
-                    </div>
+                        )}
+                      </CardHeader>
 
-                    <CardHeader className="p-3 lg:p-4 pb-2">
-                      <CardTitle className="text-sm lg:text-base leading-tight line-clamp-2">
-                        {product.name}
-                      </CardTitle>
-                      {product.sku && (
-                        <Badge variant="outline" className="text-xs w-fit">
-                          SKU: {product.sku}
-                        </Badge>
-                      )}
-                    </CardHeader>
-
-                    <CardContent className="p-3 lg:p-4 pt-0">
-                      <div className="space-y-2">
-                        <Link to={`/store/product/${product.id}`}>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full text-xs"
+                      <CardContent className="p-3 lg:p-4 pt-0">
+                        <div className="space-y-2">
+                          {/* View Product Button */}
+                          <Link
+                            to={`/store/product/${product.id}`}
+                            className="block"
                           >
-                            View Details
-                          </Button>
-                        </Link>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full text-xs"
+                            >
+                              View Details
+                            </Button>
+                          </Link>
 
-                        {!isInCart ? (
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between bg-gray-50 rounded p-2">
-                              <span className="text-sm font-medium text-gray-700">
-                                Quantity:
+                          {/* Cart Controls */}
+                          {!isInCart ? (
+                            /* Quantity Selector + Add to Cart - Show when not in cart */
+                            <div className="space-y-2">
+                              {/* Quantity Selector */}
+                              <div className="flex items-center justify-between bg-gray-50 rounded p-2">
+                                <span className="text-sm font-medium text-gray-700">
+                                  Quantity:
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                      updateLocalQuantity(
+                                        product.id,
+                                        getLocalQuantity(product.id) - 1
+                                      )
+                                    }
+                                    disabled={getLocalQuantity(product.id) <= 1}
+                                    className="h-7 w-7 p-0"
+                                  >
+                                    <Minus className="w-3 h-3" />
+                                  </Button>
+
+                                  <span className="px-3 py-1 bg-white rounded border text-sm font-medium min-w-[3rem] text-center">
+                                    {getLocalQuantity(product.id)}
+                                  </span>
+
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                      updateLocalQuantity(
+                                        product.id,
+                                        getLocalQuantity(product.id) + 1
+                                      )
+                                    }
+                                    disabled={
+                                      getLocalQuantity(product.id) >= 99
+                                    }
+                                    className="h-7 w-7 p-0"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              </div>
+
+                              {/* Add to Cart Button */}
+                              <Button
+                                onClick={() => handleAddToCart(product)}
+                                disabled={
+                                  isThisProductLoading ||
+                                  isThisProductUpdating ||
+                                  product.status === 0
+                                }
+                                size="sm"
+                                className="w-full bg-red-600 hover:bg-red-700 text-white"
+                              >
+                                {isThisProductLoading ? (
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    Adding...
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2">
+                                    <ShoppingCart className="w-4 h-4" />
+                                    Add {getLocalQuantity(product.id)} to Cart
+                                  </div>
+                                )}
+                              </Button>
+                            </div>
+                          ) : (
+                            /* Cart Quantity Controls - Only show when in cart */
+                            <div className="flex items-center justify-between bg-green-50 rounded p-2 border border-green-200">
+                              <span className="text-sm font-medium text-green-700">
+                                In Cart:
                               </span>
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-2">
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() =>
-                                    updateLocalQuantity(
-                                      product.id,
-                                      getLocalQuantity(product.id) - 1
-                                    )
+                                    cartQuantity === 1
+                                      ? handleRemoveFromCart(product)
+                                      : handleUpdateCartQuantity(
+                                          product,
+                                          cartQuantity - 1
+                                        )
                                   }
-                                  disabled={getLocalQuantity(product.id) <= 1}
+                                  disabled={
+                                    isThisProductUpdating ||
+                                    isThisProductLoading
+                                  }
                                   className="h-7 w-7 p-0"
                                 >
-                                  <Minus className="w-3 h-3" />
+                                  {cartQuantity === 1 ? (
+                                    <X className="w-3 h-3" />
+                                  ) : (
+                                    <Minus className="w-3 h-3" />
+                                  )}
                                 </Button>
+
                                 <span className="px-3 py-1 bg-white rounded border text-sm font-medium min-w-[3rem] text-center">
-                                  {getLocalQuantity(product.id)}
+                                  {isThisProductUpdating ||
+                                  isThisProductLoading ? (
+                                    <div className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                                  ) : (
+                                    cartQuantity
+                                  )}
                                 </span>
+
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() =>
-                                    updateLocalQuantity(
-                                      product.id,
-                                      getLocalQuantity(product.id) + 1
+                                    handleUpdateCartQuantity(
+                                      product,
+                                      cartQuantity + 1
                                     )
                                   }
-                                  disabled={getLocalQuantity(product.id) >= 99}
+                                  disabled={
+                                    isThisProductUpdating ||
+                                    isThisProductLoading ||
+                                    cartQuantity >= 99 ||
+                                    product.status === 0
+                                  }
                                   className="h-7 w-7 p-0"
                                 >
                                   <Plus className="w-3 h-3" />
                                 </Button>
                               </div>
                             </div>
-                            <Button
-                              onClick={() => handleAddToCart(product)}
-                              disabled={
-                                isThisProductLoading || product.status === 0
-                              }
-                              size="sm"
-                              className="w-full bg-red-600 hover:bg-red-700 text-white"
-                            >
-                              {isThisProductLoading ? (
-                                <div className="flex items-center gap-2">
-                                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                  Adding...
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2">
-                                  <ShoppingCart className="w-4 h-4" />
-                                  Add {getLocalQuantity(product.id)} to Cart
-                                </div>
-                              )}
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-between bg-green-50 rounded p-2 border border-green-200">
-                            <span className="text-sm font-medium text-green-700">
-                              In Cart:
-                            </span>
-                            <div className="flex items-center gap-2">
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+
+              {/* Responsive Pagination */}
+              {pagination && pagination.pages > 1 && (
+                <div className="mt-6 lg:mt-8">
+                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <div className="hidden sm:block text-sm text-gray-600">
+                      Page {currentPage} of {pagination.pages}
+                      {pagination.total && (
+                        <span className="ml-2">
+                          ({pagination.total} total products)
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="px-2 lg:px-3"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                        <span className="hidden sm:inline ml-1">Prev</span>
+                      </Button>
+
+                      <div className="flex gap-1">
+                        {generatePaginationNumbers()
+                          .slice(0, window.innerWidth < 640 ? 5 : undefined)
+                          .map((page, index) => {
+                            if (page === "...") {
+                              return (
+                                <span
+                                  key={`ellipsis-${index}`}
+                                  className="px-2 lg:px-3 py-2 text-gray-500 text-sm"
+                                >
+                                  ...
+                                </span>
+                              );
+                            }
+
+                            const pageNum = page as number;
+                            return (
                               <Button
-                                variant="ghost"
+                                key={pageNum}
+                                variant={
+                                  currentPage === pageNum
+                                    ? "default"
+                                    : "outline"
+                                }
                                 size="sm"
-                                onClick={() =>
-                                  handleUpdateCartQuantity(
-                                    product,
-                                    cartQuantity - 1
-                                  )
-                                }
-                                disabled={isThisProductUpdating}
-                                className="h-7 w-7 p-0"
+                                onClick={() => handlePageChange(pageNum)}
+                                className="min-w-[32px] px-2 lg:px-3"
                               >
-                                {cartQuantity === 1 ? (
-                                  <X className="w-3 h-3" />
-                                ) : (
-                                  <Minus className="w-3 h-3" />
-                                )}
+                                {pageNum}
                               </Button>
-                              <span className="px-3 py-1 bg-white rounded border text-sm font-medium min-w-[3rem] text-center">
-                                {isThisProductUpdating ? (
-                                  <div className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin mx-auto" />
-                                ) : (
-                                  cartQuantity
-                                )}
-                              </span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() =>
-                                  handleUpdateCartQuantity(
-                                    product,
-                                    cartQuantity + 1
-                                  )
-                                }
-                                disabled={
-                                  isThisProductUpdating || cartQuantity >= 99
-                                }
-                                className="h-7 w-7 p-0"
-                              >
-                                <Plus className="w-3 h-3" />
-                              </Button>
-                            </div>
-                          </div>
-                        )}
+                            );
+                          })}
                       </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage === pagination.pages}
+                        className="px-2 lg:px-3"
+                      >
+                        <span className="hidden sm:inline mr-1">Next</span>
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    <div className="sm:hidden text-sm text-gray-600 text-center">
+                      Page {currentPage} of {pagination.pages}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
             <div className="text-center py-12">
-              <Grid3X3 className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-              <p className="text-gray-500 text-lg">No products found</p>
+              <Grid3X3 className="w-12 h-12 lg:w-16 lg:h-16 mx-auto text-gray-400 mb-4" />
+              <p className="text-gray-500 text-base lg:text-lg">
+                No products found
+              </p>
               <Button variant="outline" onClick={clearFilters} className="mt-4">
                 Clear Filters
               </Button>
-            </div>
-          )}
-
-          {/* Pagination */}
-          {pagination && pagination.pages > 1 && (
-            <div className="mt-8 flex justify-center">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(currentPage - 1)}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  Previous
-                </Button>
-
-                <span className="px-4 py-2 text-sm text-gray-600">
-                  Page {currentPage} of {pagination.pages}
-                </span>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(currentPage + 1)}
-                  disabled={currentPage === pagination.pages}
-                >
-                  Next
-                  <ChevronLeft className="w-4 h-4 rotate-180" />
-                </Button>
-              </div>
             </div>
           )}
         </div>
