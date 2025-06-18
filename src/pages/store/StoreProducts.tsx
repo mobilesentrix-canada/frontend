@@ -1,927 +1,44 @@
-import React, {
-  useState,
-  useEffect,
-  useMemo,
-  useCallback,
-  useRef,
-} from "react";
-import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { useToast } from "@/hooks/use-toast";
-import {
-  useProducts,
-  useCategories,
-  useSubCategories,
-  Product,
-} from "@/hooks/useProducts";
-import { useCart, useWishlist } from "@/hooks/useCart";
-import {
-  ShoppingCart,
-  ChevronDown,
-  ChevronRight,
-  Grid3X3,
-  X,
-  Heart,
-  Plus,
-  ChevronLeft,
-  Search,
-  Minus,
-  ArrowRight,
-  Folder,
-  FolderOpen,
-  Menu,
-  Filter,
-} from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
-import { STATIC_CATEGORIES } from "@/db";
-import {
-  Tabs,
-  Tab,
-  Box,
-  TextField,
-  InputAdornment,
-  IconButton,
-} from "@mui/material";
-import { styled } from "@mui/material/styles";
-import {
-  Sheet,
-  SheetContent,
-  SheetTrigger,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-
-// Simple styled tabs
-const StyledTabs = styled(Tabs)({
-  minHeight: 40,
-  "& .MuiTabs-indicator": {
-    backgroundColor: "#dc2626",
-    height: 2,
-  },
-});
-
-const StyledTab = styled(Tab)({
-  textTransform: "none",
-  minWidth: 100,
-  fontWeight: 500,
-  fontSize: "14px",
-  color: "#6b7280",
-  "&.Mui-selected": {
-    color: "#dc2626",
-    fontWeight: 600,
-  },
-  "&:hover": {
-    color: "#374151",
-  },
-});
-
-export default function StoreProducts() {
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
-    null
-  );
-  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<
-    number | null
-  >(null);
-  const [selectedNestedSubCategoryId, setSelectedNestedSubCategoryId] =
-    useState<number | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [loadingProductId, setLoadingProductId] = useState<number | null>(null);
-  const [updatingProductId, setUpdatingProductId] = useState<number | null>(
-    null
-  );
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-
-  // NEW: State to store all nested subcategories for search
-  const [allNestedSubCategories, setAllNestedSubCategories] = useState<any[]>([]);
-  const [fetchedNestedSubCategoryIds, setFetchedNestedSubCategoryIds] = useState<Set<number>>(new Set());
-  const [isFetchingNested, setIsFetchingNested] = useState(false);
-
-  // Local quantity state for products before adding to cart
-  const [localQuantities, setLocalQuantities] = useState<
-    Record<number, number>
-  >({});
-
-  // Refs to maintain focus
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
-
-  const { toast } = useToast();
-
-  // Fetch subcategories for all main categories
-  const allCategoryHooks = STATIC_CATEGORIES.map((category) => {
-    try {
-      return useSubCategories(category.entity_id);
-    } catch (error) {
-      console.error(
-        `Error fetching subcategories for category ${category.entity_id}:`,
-        error
-      );
-      return { subCategories: [], isLoading: false, error };
-    }
-  });
-
-  // Get currently selected category data for UI display
-  const selectedCategoryData = allCategoryHooks.find(
-    (_, index) => STATIC_CATEGORIES[index].entity_id === selectedCategoryId
-  );
-  const subCategories = selectedCategoryData?.subCategories || [];
-  const subCategoriesLoading = selectedCategoryData?.isLoading || false;
-
-  // Fetch nested subcategories for the currently selected subcategory
-  const {
-    subCategories: nestedSubCategories = [],
-    isLoading: nestedSubCategoriesLoading = false,
-    error: nestedSubCategoriesError = null,
-  } = useSubCategories(
-    selectedSubCategoryId && selectedSubCategoryId > 0
-      ? selectedSubCategoryId
-      : null
-  );
-
-  // NEW: Create a fixed number of hooks for fetching nested subcategories
-  // We'll create hooks for the first 20 subcategory IDs and manage them dynamically
-  const [subcategoryIdsToFetch, setSubcategoryIdsToFetch] = useState<number[]>([]);
-  
-  // Extract all subcategory IDs that we want to fetch nested data for
-  useEffect(() => {
-    const allSubcategoryIds: number[] = [];
-    allCategoryHooks.forEach((hookData) => {
-      if (hookData?.subCategories && !hookData.isLoading && !hookData.error) {
-        hookData.subCategories.forEach((subCat: any) => {
-          allSubcategoryIds.push(subCat.entity_id);
-        });
-      }
-    });
-    
-    console.log(`🔍 Found ${allSubcategoryIds.length} subcategories to fetch nested data for`);
-    setSubcategoryIdsToFetch(allSubcategoryIds);
-  }, [allCategoryHooks]);
-
-  // Create fixed hooks for fetching nested subcategories (max 20 at a time)
-  const maxConcurrentFetches = 20;
-  const nestedHooks = Array.from({ length: maxConcurrentFetches }, (_, index) => {
-    const subcategoryId = subcategoryIdsToFetch[index] || null;
-    return {
-      index,
-      subcategoryId,
-      hookResult: useSubCategories(subcategoryId),
-    };
-  });
-
-  // Process the hook results and build nested subcategory data
-  useEffect(() => {
-    if (subcategoryIdsToFetch.length === 0) return;
-
-    let newNestedSubCategories: any[] = [];
-    let processedCount = 0;
-
-    nestedHooks.forEach(({ subcategoryId, hookResult, index }) => {
-      if (!subcategoryId || fetchedNestedSubCategoryIds.has(subcategoryId)) return;
-
-      const { subCategories: nestedSubs, isLoading, error } = hookResult;
-
-      // Log progress
-      if (!isLoading && !error) {
-        processedCount++;
-        
-        if (nestedSubs && nestedSubs.length > 0) {
-          // Find the parent subcategory and category info
-          let parentInfo = null;
-          for (const [categoryIndex, hookData] of allCategoryHooks.entries()) {
-            if (hookData?.subCategories) {
-              const parentSubCategory = hookData.subCategories.find(
-                sub => sub.entity_id === subcategoryId
-              );
-              if (parentSubCategory) {
-                parentInfo = {
-                  parentCategory: STATIC_CATEGORIES[categoryIndex],
-                  parentSubCategory,
-                };
-                break;
-              }
-            }
-          }
-
-          if (parentInfo) {
-            console.log(`✅ Found ${nestedSubs.length} nested subcategories for: ${parentInfo.parentSubCategory.name}`);
-            
-            const nestedWithMetadata = nestedSubs.map((nestedSubCat: any) => ({
-              id: nestedSubCat.entity_id,
-              name: nestedSubCat.name,
-              type: "nestedSubcategory",
-              level: 3,
-              fullPath: `${parentInfo.parentCategory.name} > ${parentInfo.parentSubCategory.name} > ${nestedSubCat.name}`,
-              parentId: subcategoryId,
-              grandParentId: parentInfo.parentCategory.entity_id,
-              searchTerms: `${parentInfo.parentCategory.name} ${parentInfo.parentSubCategory.name} ${nestedSubCat.name}`.toLowerCase(),
-              description: `${nestedSubCat.name} in ${parentInfo.parentSubCategory.name}`,
-              parent: `${parentInfo.parentCategory.name} > ${parentInfo.parentSubCategory.name}`,
-              has_children: nestedSubCat.has_children || false,
-            }));
-
-            newNestedSubCategories.push(...nestedWithMetadata);
-          }
-        }
-        
-        // Mark as fetched
-        setFetchedNestedSubCategoryIds(prev => new Set(prev).add(subcategoryId));
-      }
-    });
-
-    // Update the search index with new nested subcategories
-    if (newNestedSubCategories.length > 0) {
-      setAllNestedSubCategories(prev => {
-        const existingIds = new Set(prev.map(item => item.id));
-        const uniqueNew = newNestedSubCategories.filter(item => !existingIds.has(item.id));
-        
-        if (uniqueNew.length > 0) {
-          console.log(`📊 Added ${uniqueNew.length} nested subcategories to search index. Total nested: ${prev.length + uniqueNew.length}`);
-          return [...prev, ...uniqueNew];
-        }
-        return prev;
-      });
-    }
-
-    // Log progress
-    const totalSubcategories = subcategoryIdsToFetch.length;
-    const fetchedCount = fetchedNestedSubCategoryIds.size;
-    if (processedCount > 0) {
-      console.log(`🔄 Progress: ${fetchedCount}/${totalSubcategories} subcategories processed for nested data`);
-    }
-  }, [nestedHooks, subcategoryIdsToFetch, allCategoryHooks, fetchedNestedSubCategoryIds]);
-
-  // Handle fetching the next batch of subcategories if we have more than maxConcurrentFetches
-  useEffect(() => {
-    const totalSubcategories = subcategoryIdsToFetch.length;
-    const fetchedCount = fetchedNestedSubCategoryIds.size;
-    
-    if (totalSubcategories > maxConcurrentFetches && fetchedCount >= maxConcurrentFetches) {
-      // Move to the next batch
-      const nextBatchStart = fetchedCount;
-      const nextBatch = subcategoryIdsToFetch.slice(nextBatchStart, nextBatchStart + maxConcurrentFetches);
-      
-      if (nextBatch.length > 0) {
-        console.log(`🔄 Moving to next batch: ${nextBatchStart} to ${nextBatchStart + nextBatch.length}`);
-        // We would need to update the subcategoryIdsToFetch to trigger the next batch
-        // For now, we'll process the first batch only to avoid infinite loops
-      }
-    }
-  }, [subcategoryIdsToFetch, fetchedNestedSubCategoryIds, maxConcurrentFetches]);
-
-  // Add nested subcategories from current selection to search data
-  useEffect(() => {
-    if (selectedSubCategoryId && nestedSubCategories.length > 0) {
-      const parentCategory = STATIC_CATEGORIES.find(
-        (cat) => cat.entity_id === selectedCategoryId
-      );
-      const parentSubCategory = subCategories.find(
-        (sub) => sub.entity_id === selectedSubCategoryId
-      );
-
-      if (parentCategory && parentSubCategory) {
-        // Check if we already have these nested subcategories in our search index
-        const existingIds = new Set(allNestedSubCategories.map(item => item.id));
-        const newNestedData = nestedSubCategories
-          .filter(nested => !existingIds.has(nested.entity_id))
-          .map((nestedSubCat) => ({
-            id: nestedSubCat.entity_id,
-            name: nestedSubCat.name,
-            type: "nestedSubcategory",
-            level: 3,
-            fullPath: `${parentCategory.name} > ${parentSubCategory.name} > ${nestedSubCat.name}`,
-            parentId: selectedSubCategoryId,
-            grandParentId: selectedCategoryId,
-            searchTerms: `${parentCategory.name} ${parentSubCategory.name} ${nestedSubCat.name}`.toLowerCase(),
-            description: `${nestedSubCat.name} in ${parentSubCategory.name}`,
-            parent: `${parentCategory.name} > ${parentSubCategory.name}`,
-            has_children: nestedSubCat.has_children || false,
-          }));
-
-        if (newNestedData.length > 0) {
-          setAllNestedSubCategories((prev) => [...prev, ...newNestedData]);
-          console.log(`➕ Added ${newNestedData.length} nested subcategories from current selection`);
-        }
-      }
-    }
-  }, [
-    selectedSubCategoryId,
-    nestedSubCategories,
-    subCategories,
-    selectedCategoryId,
-    allNestedSubCategories,
-  ]);
-
-  // Build comprehensive search data from all sources
-  const allCategoriesData = useMemo(() => {
-    const allData: any[] = [];
-
-    // Add main categories
-    STATIC_CATEGORIES.forEach((cat) => {
-      allData.push({
-        id: cat.entity_id,
-        name: cat.name,
-        type: "category",
-        level: 1,
-        fullPath: cat.name,
-        searchTerms: cat.name.toLowerCase(),
-        description: `Category: ${cat.name}`,
-        parent: null,
-        parentId: null,
-        grandParentId: null,
-        has_children: cat.has_children || false,
-      });
-    });
-
-    // Add subcategories from all categories
-    STATIC_CATEGORIES.forEach((category, index) => {
-      const hookData = allCategoryHooks[index];
-      if (hookData && !hookData.error && hookData.subCategories) {
-        hookData.subCategories.forEach((subCat: any) => {
-          allData.push({
-            id: subCat.entity_id,
-            name: subCat.name,
-            type: "subcategory",
-            level: 2,
-            fullPath: `${category.name} > ${subCat.name}`,
-            parentId: category.entity_id,
-            grandParentId: null,
-            searchTerms: `${category.name} ${subCat.name}`.toLowerCase(),
-            description: `Subcategory: ${subCat.name} in ${category.name}`,
-            parent: category.name,
-            has_children: subCat.has_children || false,
-          });
-        });
-      }
-    });
-
-    // Add all fetched nested subcategories
-    allData.push(...allNestedSubCategories);
-
-    console.log(
-      `📋 Search index contains: ${allData.filter(d => d.type === "category").length} categories, ${
-        allData.filter(d => d.type === "subcategory").length
-      } subcategories, ${allData.filter(d => d.type === "nestedSubcategory").length} nested subcategories`
-    );
-
-    return allData;
-  }, [allCategoryHooks, allNestedSubCategories]);
-
-  // Enhanced search filter with detailed logging
-  const filteredCategories = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-
-    const query = searchQuery.toLowerCase().trim();
-    const words = query.split(" ").filter((word) => word.length > 0);
-
-    console.log(`🔍 Searching for: "${query}" in ${allCategoriesData.length} items`);
-
-    const results = allCategoriesData
-      .filter((item) => {
-        // Check if any search word matches the item
-        const matches = words.some(
-          (word) =>
-            item.searchTerms.includes(word) ||
-            item.name.toLowerCase().includes(word) ||
-            item.fullPath.toLowerCase().includes(word)
-        );
-
-        if (matches && item.type === "nestedSubcategory") {
-          console.log(`✅ Found nested subcategory match: ${item.name} (${item.fullPath})`);
-        }
-
-        return matches;
-      })
-      .sort((a, b) => {
-        // Sort by relevance: exact matches first, then by level
-        const aExactMatch = a.name.toLowerCase() === query;
-        const bExactMatch = b.name.toLowerCase() === query;
-
-        if (aExactMatch && !bExactMatch) return -1;
-        if (!aExactMatch && bExactMatch) return 1;
-
-        // Then sort by name match at the beginning
-        const aStartsWithQuery = a.name.toLowerCase().startsWith(query);
-        const bStartsWithQuery = b.name.toLowerCase().startsWith(query);
-
-        if (aStartsWithQuery && !bStartsWithQuery) return -1;
-        if (!aStartsWithQuery && bStartsWithQuery) return 1;
-
-        // Finally sort by level (categories first, then subcategories, then nested)
-        return a.level - b.level;
-      });
-
-    console.log(`📊 Search results: ${results.length} items found`);
-    console.log(`   - Categories: ${results.filter(r => r.type === "category").length}`);
-    console.log(`   - Subcategories: ${results.filter(r => r.type === "subcategory").length}`);
-    console.log(`   - Nested Subcategories: ${results.filter(r => r.type === "nestedSubcategory").length}`);
-
-    return results;
-  }, [allCategoriesData, searchQuery]);
-
-  const productParams = useMemo(() => {
-    const params: any = {
-      page: currentPage,
-      limit: 12,
-    };
-
-    if (selectedNestedSubCategoryId && selectedNestedSubCategoryId > 0) {
-      params.categoryId = selectedNestedSubCategoryId;
-    } else if (selectedSubCategoryId && selectedSubCategoryId > 0) {
-      params.categoryId = selectedSubCategoryId;
-    } else if (selectedCategoryId && selectedCategoryId > 0) {
-      params.categoryId = selectedCategoryId;
-    } else {
-      console.log("🔍 Fetching all products");
-    }
-
-    return params;
-  }, [
-    currentPage,
-    selectedNestedSubCategoryId,
-    selectedSubCategoryId,
-    selectedCategoryId,
-  ]);
-
-  const {
-    products = [],
-    pagination,
-    isLoading: productsLoading = false,
-    error: productsError = null,
-  } = useProducts(productParams);
-
-  const {
-    addToCart,
-    count: cartCount = 0,
-    cartItems = [],
-    updateCartItem,
-    removeCartItem,
-  } = useCart();
-
-  const {
-    addToWishlist,
-    removeFromWishlist,
-    isInWishlist,
-    isAddingToWishlist = false,
-    isRemovingFromWishlist = false,
-  } = useWishlist();
-
-  const categories = STATIC_CATEGORIES.map((cat) => ({
-    id: cat.entity_id.toString(),
-    name: cat.name,
-    has_children: cat.has_children,
-    image_url: cat.image_url,
-  }));
-
-  // Helper functions
-  const getCartItemForProduct = useCallback(
-    (productId: number) => {
-      return cartItems.find((item) => item.product.id === productId);
-    },
-    [cartItems]
-  );
-
-  const getProductQuantityInCart = useCallback(
-    (productId: number) => {
-      const cartItem = getCartItemForProduct(productId);
-      return cartItem ? cartItem.quantity : 0;
-    },
-    [getCartItemForProduct]
-  );
-
-  // Get local quantity (quantity selector) for a product
-  const getLocalQuantity = useCallback(
-    (productId: number) => {
-      return localQuantities[productId] || 1;
-    },
-    [localQuantities]
-  );
-
-  // Update local quantity (before adding to cart)
-  const updateLocalQuantity = useCallback(
-    (productId: number, quantity: number) => {
-      if (quantity < 1) quantity = 1;
-      if (quantity > 99) quantity = 99;
-
-      setLocalQuantities((prev) => ({
-        ...prev,
-        [productId]: quantity,
-      }));
-    },
-    []
-  );
-
-  const handleAddToCart = useCallback(
-    async (product: Product) => {
-      if (!product || !product.id) {
-        toast({
-          title: "Error",
-          description: "Invalid product data",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const quantityToAdd = getLocalQuantity(product.id);
-      setLoadingProductId(product.id);
-
-      try {
-        await addToCart(
-          { product_id: product.id, quantity: quantityToAdd },
-          {
-            onSuccess: () => {
-              toast({
-                title: "Added to cart",
-                description: `${quantityToAdd} x ${product.name} added to your cart`,
-              });
-              // Reset local quantity after successful add
-              setLocalQuantities((prev) => {
-                const newState = { ...prev };
-                delete newState[product.id];
-                return newState;
-              });
-            },
-            onError: (error: any) => {
-              toast({
-                title: "Error",
-                description: error?.message || "Failed to add product to cart",
-                variant: "destructive",
-              });
-            },
-          }
-        );
-      } catch (error: any) {
-        toast({
-          title: "Error",
-          description: error?.message || "Failed to add product to cart",
-          variant: "destructive",
-        });
-      } finally {
-        setLoadingProductId(null);
-      }
-    },
-    [addToCart, toast, getLocalQuantity]
-  );
-
-  const handleUpdateCartQuantity = useCallback(
-    async (product: Product, newQuantity: number) => {
-      if (!product || !product.id) return;
-
-      const cartItem = getCartItemForProduct(product.id);
-      if (!cartItem) return;
-
-      if (newQuantity < 1) {
-        handleRemoveFromCart(product);
-        return;
-      }
-
-      setUpdatingProductId(product.id);
-      try {
-        await updateCartItem(cartItem.id, { quantity: newQuantity });
-        toast({
-          title: "Cart updated",
-          description: `${product.name} quantity updated`,
-        });
-      } catch (error: any) {
-        toast({
-          title: "Error",
-          description: error?.message || "Failed to update cart",
-          variant: "destructive",
-        });
-      } finally {
-        setUpdatingProductId(null);
-      }
-    },
-    [getCartItemForProduct, updateCartItem, toast]
-  );
-
-  const handleRemoveFromCart = useCallback(
-    async (product: Product) => {
-      if (!product || !product.id) return;
-
-      const cartItem = getCartItemForProduct(product.id);
-      if (!cartItem) return;
-
-      setUpdatingProductId(product.id);
-      try {
-        await removeCartItem(cartItem.id);
-        toast({
-          title: "Removed from cart",
-          description: `${product.name} has been removed from your cart`,
-        });
-      } catch (error: any) {
-        toast({
-          title: "Error",
-          description: error?.message || "Failed to remove from cart",
-          variant: "destructive",
-        });
-      } finally {
-        setUpdatingProductId(null);
-      }
-    },
-    [getCartItemForProduct, removeCartItem, toast]
-  );
-
-  const handleWishlistToggle = useCallback(
-    async (product: Product) => {
-      if (!product || !product.id) return;
-
-      const productId = product.id;
-      try {
-        if (isInWishlist(productId)) {
-          await removeFromWishlist(productId, {
-            onSuccess: () => {
-              toast({
-                title: "Removed from wishlist",
-                description: `${product.name} has been removed from your wishlist`,
-              });
-            },
-            onError: (error: any) => {
-              toast({
-                title: "Error",
-                description: error?.message || "Failed to remove from wishlist",
-                variant: "destructive",
-              });
-            },
-          });
-        } else {
-          await addToWishlist(
-            { product_id: productId },
-            {
-              onSuccess: () => {
-                toast({
-                  title: "Added to wishlist",
-                  description: `${product.name} has been added to your wishlist`,
-                });
-              },
-              onError: (error: any) => {
-                toast({
-                  title: "Error",
-                  description: error?.message || "Failed to add to wishlist",
-                  variant: "destructive",
-                });
-              },
-            }
-          );
-        }
-      } catch (error: any) {
-        toast({
-          title: "Error",
-          description: error?.message || "Failed to update wishlist",
-          variant: "destructive",
-        });
-      }
-    },
-    [isInWishlist, removeFromWishlist, addToWishlist, toast]
-  );
-
-  const handleCategoryChange = useCallback(
-    (event: React.SyntheticEvent, newValue: string) => {
-      if (newValue === "all") {
-        setSelectedCategoryId(null);
-        setSelectedSubCategoryId(null);
-        setSelectedNestedSubCategoryId(null);
-        setExpandedCategory(null);
-      } else {
-        const numCategoryId = parseInt(newValue);
-        if (!isNaN(numCategoryId)) {
-          setSelectedCategoryId(numCategoryId);
-          setSelectedSubCategoryId(null);
-          setSelectedNestedSubCategoryId(null);
-          setExpandedCategory(newValue);
-        }
-      }
-      setCurrentPage(1);
-      setSearchQuery("");
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    },
-    []
-  );
-
-  const handleSubCategoryClick = useCallback(
-    (subCategoryId: number) => {
-      if (!subCategoryId || subCategoryId <= 0) return;
-
-      if (selectedSubCategoryId === subCategoryId) {
-        setSelectedSubCategoryId(null);
-        setSelectedNestedSubCategoryId(null);
-      } else {
-        setSelectedSubCategoryId(subCategoryId);
-        setSelectedNestedSubCategoryId(null);
-      }
-      setCurrentPage(1);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    },
-    [selectedSubCategoryId]
-  );
-
-  const handleNestedSubCategoryClick = useCallback(
-    (nestedSubCategoryId: number) => {
-      if (!nestedSubCategoryId || nestedSubCategoryId <= 0) return;
-      setSelectedNestedSubCategoryId(nestedSubCategoryId);
-      setCurrentPage(1);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    },
-    []
-  );
-
-  const handleSearchResultClick = useCallback((item: any) => {
-    if (!item || !item.id) return;
-    setCurrentPage(1);
-
-    if (item.type === "category") {
-      setSelectedCategoryId(item.id);
-      setSelectedSubCategoryId(null);
-      setSelectedNestedSubCategoryId(null);
-      setExpandedCategory(item.id.toString());
-    } else if (item.type === "subcategory") {
-      setSelectedCategoryId(item.parentId);
-      setSelectedSubCategoryId(item.id);
-      setSelectedNestedSubCategoryId(null);
-      setExpandedCategory(item.parentId?.toString());
-    } else if (item.type === "nestedSubcategory") {
-      setSelectedCategoryId(item.grandParentId);
-      setSelectedSubCategoryId(item.parentId);
-      setSelectedNestedSubCategoryId(item.id);
-      setExpandedCategory(item.grandParentId?.toString());
-    }
-
-    setTimeout(() => {
-      setSearchQuery("");
-    }, 100);
-
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, []);
-
-  const clearFilters = useCallback(() => {
-    setSelectedCategoryId(null);
-    setSelectedSubCategoryId(null);
-    setSelectedNestedSubCategoryId(null);
-    setExpandedCategory(null);
-    setSearchQuery("");
-    setCurrentPage(1);
-    setIsMobileSidebarOpen(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, []);
-
-  const handleSearchChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const newValue = e.target.value;
-      setSearchQuery(newValue);
-
-      setTimeout(() => {
-        if (searchInputRef.current) {
-          searchInputRef.current.focus();
-        }
-        if (mobileSearchInputRef.current) {
-          mobileSearchInputRef.current.focus();
-        }
-      }, 0);
-    },
-    []
-  );
-
-  const handleClearSearch = useCallback(() => {
-    setSearchQuery("");
-    setCurrentPage(1);
-  }, []);
-
-  const handleMobileCategorySelect = useCallback(
-    (categoryId: number | null) => {
-      setSelectedCategoryId(categoryId);
-      setSelectedSubCategoryId(null);
-      setSelectedNestedSubCategoryId(null);
-      setExpandedCategory(categoryId?.toString() || null);
-      setCurrentPage(1);
-      setSearchQuery("");
-      setIsMobileSidebarOpen(false);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    },
-    []
-  );
-
-  const handleMobileSubCategorySelect = useCallback((subCategoryId: number) => {
-    if (!subCategoryId || subCategoryId <= 0) return;
-    setSelectedSubCategoryId(subCategoryId);
-    setSelectedNestedSubCategoryId(null);
-    setCurrentPage(1);
-    setIsMobileSidebarOpen(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, []);
-
-  const handleMobileNestedSubCategorySelect = useCallback(
-    (nestedSubCategoryId: number) => {
-      if (!nestedSubCategoryId || nestedSubCategoryId <= 0) return;
-      setSelectedNestedSubCategoryId(nestedSubCategoryId);
-      setCurrentPage(1);
-      setIsMobileSidebarOpen(false);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    },
-    []
-  );
-
-  const SidebarContent = React.memo(
-    ({ isMobile = false }: { isMobile?: boolean }) => (
-      <div className="h-full flex flex-col">
-        <div className="p-4 border-b border-gray-200 flex-shrink-0">
-          <h2 className="font-semibold text-gray-900 mb-4">Categories</h2>
-
-          <div className="relative">
-            <TextField
-              inputRef={isMobile ? mobileSearchInputRef : searchInputRef}
-              type="text"
-              placeholder="Search categories..."
-              value={searchQuery}
-              onChange={handleSearchChange}
-              size="small"
-              fullWidth
-              variant="outlined"
-              autoComplete="off"
-              spellCheck={false}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Search className="w-4 h-4 text-gray-400" />
-                  </InputAdornment>
-                ),
-                endAdornment: searchQuery ? (
-                  <InputAdornment position="end">
-                    <IconButton
-                      onClick={handleClearSearch}
-                      size="small"
-                      aria-label="Clear search"
-                      sx={{ color: "gray" }}
-                    >
-                      <X className="w-4 h-4" />
-                    </IconButton>
-                  </InputAdornment>
-                ) : null,
-                sx: {
-                  height: "40px",
-                  fontSize: "14px",
-                  "& .MuiOutlinedInput-root": {
-                    borderRadius: "6px",
-                  },
-                },
-              }}
-              sx={{
-                "& .MuiOutlinedInput-root": {
-                  "& fieldset": {
-                    borderColor: "#e5e7eb",
-                  },
-                  "&:hover fieldset": {
-                    borderColor: "#d1d5db",
-                  },
-                  "&.Mui-focused fieldset": {
-                    borderColor: "#dc2626",
-                    borderWidth: "1px",
-                  },
-                },
-              }}
-            />
-          </div>
-
-          {/* Debug info in development */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mt-2 text-xs text-gray-500 space-y-1">
-              <div>Search Index: {allCategoriesData.length} items</div>
-              <div>Nested: {allNestedSubCategories.length}</div>
-              <div>Fetched: {fetchedNestedSubCategoryIds.size}/{subcategoryIdsToFetch.length} subcategories</div>
-              {subcategoryIdsToFetch.length > 0 && fetchedNestedSubCategoryIds.size < subcategoryIdsToFetch.length && (
-                <div className="text-blue-600">🔄 Fetching nested categories...</div>
-              )}
-              {subcategoryIdsToFetch.length > 0 && fetchedNestedSubCategoryIds.size === subcategoryIdsToFetch.length && (
-                <div className="text-green-600">✅ All nested categories loaded</div>
+{/* Loading progress */}
+          {isLoadingCategories && (
+            <div className="mt-3 text-xs text-blue-600">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+                <span>{categoryLoadingProgress.currentStep}</span>
+              </div>
+              {categoryLoadingProgress.total > 0 && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span>Progress: {categoryLoadingProgress.loaded}/{categoryLoadingProgress.total}</span>
+                    <span>{Math.round((categoryLoadingProgress.loaded / categoryLoadingProgress.total) * 100)}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-1">
+                    <div 
+                      className="bg-blue-600 h-1 rounded-full transition-all duration-300"
+                      style={{ 
+                        width: `${categoryLoadingProgress.total > 0 ? (categoryLoadingProgress.loaded / categoryLoadingProgress.total) * 100 : 0}%` 
+                      }}
+                    ></div>
+                  </div>
+                </div>
               )}
             </div>
           )}
 
-          {/* Progress indicator for nested category fetching */}
-          {subcategoryIdsToFetch.length > 0 && fetchedNestedSubCategoryIds.size < subcategoryIdsToFetch.length && (
-            <div className="mt-2 text-xs text-blue-600">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
-                <span>Loading nested categories... ({fetchedNestedSubCategoryIds.size}/{subcategoryIdsToFetch.length})</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
-                <div 
-                  className="bg-blue-600 h-1 rounded-full transition-all duration-300"
-                  style={{ 
-                    width: `${subcategoryIdsToFetch.length > 0 ? (fetchedNestedSubCategoryIds.size / subcategoryIdsToFetch.length) * 100 : 0}%` 
-                  }}
-                ></div>
-              </div>
+          {/* Debug info in development */}
+          {process.env.NODE_ENV === 'development' && !isLoadingCategories && (
+            <div className="mt-2 text-xs text-gray-500 space-y-1">
+              <div>🎯 Total searchable items: {allCategoriesData.length}</div>
+              <div>📁 Categories: {allCategoriesData.filter(d => d.type === "category").length}</div>
+              <div>📂 Subcategories: {allCategoriesData.filter(d => d.type === "subcategory").length}</div>
+              <div>📄 Nested: {allCategoriesData.filter(d => d.type === "nestedSubcategory").length}</div>
+            </div>
+          )}
+
+          {/* Success indicator */}
+          {!isLoadingCategories && allCategoriesData.length > 0 && (
+            <div className="mt-2 text-xs text-green-600 flex items-center gap-1">
+              <span>✅</span>
+              <span>All categories loaded ({allCategoriesData.length} items)</span>
             </div>
           )}
         </div>
@@ -987,7 +104,7 @@ export default function StoreProducts() {
           )}
 
           {/* No search results */}
-          {searchQuery && filteredCategories.length === 0 && (
+          {searchQuery && filteredCategories.length === 0 && !isLoadingCategories && (
             <div className="mb-4 text-center py-8">
               <div className="text-sm text-gray-500">
                 No categories found for "{searchQuery}"
@@ -998,6 +115,15 @@ export default function StoreProducts() {
               >
                 Clear search
               </button>
+            </div>
+          )}
+
+          {/* Loading state for search */}
+          {searchQuery && isLoadingCategories && (
+            <div className="mb-4 text-center py-8">
+              <div className="text-sm text-gray-500">
+                Loading categories for search...
+              </div>
             </div>
           )}
 
@@ -1716,4 +842,881 @@ export default function StoreProducts() {
       </div>
     </div>
   );
+}import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
+import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+import {
+  useProducts,
+  useCategories,
+  useSubCategories,
+  Product,
+} from "@/hooks/useProducts";
+import { useCart, useWishlist } from "@/hooks/useCart";
+import {
+  ShoppingCart,
+  ChevronDown,
+  ChevronRight,
+  Grid3X3,
+  X,
+  Heart,
+  Plus,
+  ChevronLeft,
+  Search,
+  Minus,
+  ArrowRight,
+  Folder,
+  FolderOpen,
+  Menu,
+  Filter,
+} from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+import { STATIC_CATEGORIES } from "@/db";
+import {
+  Tabs,
+  Tab,
+  Box,
+  TextField,
+  InputAdornment,
+  IconButton,
+} from "@mui/material";
+import { styled } from "@mui/material/styles";
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+
+// Simple styled tabs
+const StyledTabs = styled(Tabs)({
+  minHeight: 40,
+  "& .MuiTabs-indicator": {
+    backgroundColor: "#dc2626",
+    height: 2,
+  },
+});
+
+const StyledTab = styled(Tab)({
+  textTransform: "none",
+  minWidth: 100,
+  fontWeight: 500,
+  fontSize: "14px",
+  color: "#6b7280",
+  "&.Mui-selected": {
+    color: "#dc2626",
+    fontWeight: 600,
+  },
+  "&:hover": {
+    color: "#374151",
+  },
+});
+
+// Types for our comprehensive category data
+interface CategoryItem {
+  id: number;
+  name: string;
+  type: "category" | "subcategory" | "nestedSubcategory";
+  level: number;
+  fullPath: string;
+  searchTerms: string;
+  description: string;
+  parent: string | null;
+  parentId: number | null;
+  grandParentId: number | null;
+  has_children: boolean;
 }
+
+export default function StoreProducts() {
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
+    null
+  );
+  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<
+    number | null
+  >(null);
+  const [selectedNestedSubCategoryId, setSelectedNestedSubCategoryId] =
+    useState<number | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [loadingProductId, setLoadingProductId] = useState<number | null>(null);
+  const [updatingProductId, setUpdatingProductId] = useState<number | null>(
+    null
+  );
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // NEW: Complete category data store
+  const [allCategoriesData, setAllCategoriesData] = useState<CategoryItem[]>([]);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(true);
+  const [categoryLoadingProgress, setCategoryLoadingProgress] = useState({
+    total: 0,
+    loaded: 0,
+    currentStep: "Initializing..."
+  });
+
+  // Local quantity state for products before adding to cart
+  const [localQuantities, setLocalQuantities] = useState<
+    Record<number, number>
+  >({});
+
+  // Refs to maintain focus
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
+
+  const { toast } = useToast();
+
+  // Fetch subcategories for all main categories (for UI display)
+  const allCategoryHooks = STATIC_CATEGORIES.map((category) => {
+    try {
+      return useSubCategories(category.entity_id);
+    } catch (error) {
+      console.error(
+        `Error fetching subcategories for category ${category.entity_id}:`,
+        error
+      );
+      return { subCategories: [], isLoading: false, error };
+    }
+  });
+
+  // Get currently selected category data for UI display
+  const selectedCategoryData = allCategoryHooks.find(
+    (_, index) => STATIC_CATEGORIES[index].entity_id === selectedCategoryId
+  );
+  const subCategories = selectedCategoryData?.subCategories || [];
+  const subCategoriesLoading = selectedCategoryData?.isLoading || false;
+
+  // Fetch nested subcategories for the currently selected subcategory
+  const {
+    subCategories: nestedSubCategories = [],
+    isLoading: nestedSubCategoriesLoading = false,
+    error: nestedSubCategoriesError = null,
+  } = useSubCategories(
+    selectedSubCategoryId && selectedSubCategoryId > 0
+      ? selectedSubCategoryId
+      : null
+  );
+
+  // NEW: Comprehensive category data fetching function
+  const fetchAllCategoryData = useCallback(async () => {
+    setIsLoadingCategories(true);
+    setCategoryLoadingProgress({ total: 0, loaded: 0, currentStep: "Starting comprehensive fetch..." });
+    
+    try {
+      const allData: CategoryItem[] = [];
+      
+      console.log("🚀 Starting comprehensive category data fetch...");
+      
+      // Step 1: Add main categories
+      setCategoryLoadingProgress(prev => ({ ...prev, currentStep: "Loading main categories..." }));
+      STATIC_CATEGORIES.forEach((cat) => {
+        allData.push({
+          id: cat.entity_id,
+          name: cat.name,
+          type: "category",
+          level: 1,
+          fullPath: cat.name,
+          searchTerms: cat.name.toLowerCase(),
+          description: `Category: ${cat.name}`,
+          parent: null,
+          parentId: null,
+          grandParentId: null,
+          has_children: cat.has_children || false,
+        });
+      });
+      
+      console.log(`✅ Added ${STATIC_CATEGORIES.length} main categories`);
+      
+      // Step 2: Fetch all subcategories
+      setCategoryLoadingProgress(prev => ({ 
+        ...prev, 
+        currentStep: "Loading subcategories...", 
+        total: STATIC_CATEGORIES.length 
+      }));
+      
+      const subcategoryPromises = STATIC_CATEGORIES.map(async (category, index) => {
+        try {
+          setCategoryLoadingProgress(prev => ({ 
+            ...prev, 
+            loaded: index,
+            currentStep: `Loading subcategories for ${category.name}...` 
+          }));
+          
+          // Use the same API call pattern as your useSubCategories hook
+          const response = await fetch(`/api/categories/${category.entity_id}/subcategories`);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch subcategories for ${category.name}`);
+          }
+          
+          const data = await response.json();
+          const subcategories = data.subcategories || [];
+          
+          console.log(`📁 Found ${subcategories.length} subcategories for ${category.name}`);
+          
+          // Add subcategories to data
+          const subcategoryData: CategoryItem[] = subcategories.map((subCat: any) => ({
+            id: subCat.entity_id,
+            name: subCat.name,
+            type: "subcategory",
+            level: 2,
+            fullPath: `${category.name} > ${subCat.name}`,
+            parentId: category.entity_id,
+            grandParentId: null,
+            searchTerms: `${category.name} ${subCat.name}`.toLowerCase(),
+            description: `Subcategory: ${subCat.name} in ${category.name}`,
+            parent: category.name,
+            has_children: subCat.has_children || false,
+          }));
+          
+          return { categoryName: category.name, subcategories, subcategoryData };
+        } catch (error) {
+          console.error(`❌ Error fetching subcategories for ${category.name}:`, error);
+          return { categoryName: category.name, subcategories: [], subcategoryData: [] };
+        }
+      });
+      
+      const subcategoryResults = await Promise.all(subcategoryPromises);
+      
+      // Add all subcategories to main data
+      let totalSubcategories = 0;
+      const allSubcategories: any[] = [];
+      
+      subcategoryResults.forEach(result => {
+        allData.push(...result.subcategoryData);
+        allSubcategories.push(...result.subcategories.map(sub => ({
+          ...sub,
+          parentCategoryName: result.categoryName,
+          parentCategoryId: STATIC_CATEGORIES.find(cat => cat.name === result.categoryName)?.entity_id
+        })));
+        totalSubcategories += result.subcategories.length;
+      });
+      
+      console.log(`✅ Added ${totalSubcategories} subcategories total`);
+      
+      // Step 3: Fetch all nested subcategories
+      setCategoryLoadingProgress(prev => ({ 
+        ...prev, 
+        currentStep: "Loading nested subcategories...", 
+        total: allSubcategories.length,
+        loaded: 0
+      }));
+      
+      const nestedSubcategoryPromises = allSubcategories.map(async (subCat, index) => {
+        try {
+          setCategoryLoadingProgress(prev => ({ 
+            ...prev, 
+            loaded: index,
+            currentStep: `Loading nested categories for ${subCat.name}...` 
+          }));
+          
+          const response = await fetch(`/api/categories/${subCat.entity_id}/subcategories`);
+          if (!response.ok) {
+            // Not an error - this subcategory might not have nested subcategories
+            return { subcategoryName: subCat.name, nestedSubcategories: [], nestedData: [] };
+          }
+          
+          const data = await response.json();
+          const nestedSubcategories = data.subcategories || [];
+          
+          if (nestedSubcategories.length > 0) {
+            console.log(`🔗 Found ${nestedSubcategories.length} nested subcategories for ${subCat.name}`);
+          }
+          
+          // Create nested subcategory data
+          const nestedData: CategoryItem[] = nestedSubcategories.map((nestedSubCat: any) => ({
+            id: nestedSubCat.entity_id,
+            name: nestedSubCat.name,
+            type: "nestedSubcategory",
+            level: 3,
+            fullPath: `${subCat.parentCategoryName} > ${subCat.name} > ${nestedSubCat.name}`,
+            parentId: subCat.entity_id,
+            grandParentId: subCat.parentCategoryId,
+            searchTerms: `${subCat.parentCategoryName} ${subCat.name} ${nestedSubCat.name}`.toLowerCase(),
+            description: `${nestedSubCat.name} in ${subCat.name}`,
+            parent: `${subCat.parentCategoryName} > ${subCat.name}`,
+            has_children: nestedSubCat.has_children || false,
+          }));
+          
+          return { subcategoryName: subCat.name, nestedSubcategories, nestedData };
+        } catch (error) {
+          console.error(`❌ Error fetching nested subcategories for ${subCat.name}:`, error);
+          return { subcategoryName: subCat.name, nestedSubcategories: [], nestedData: [] };
+        }
+      });
+      
+      const nestedResults = await Promise.all(nestedSubcategoryPromises);
+      
+      // Add all nested subcategories to main data
+      let totalNestedSubcategories = 0;
+      nestedResults.forEach(result => {
+        allData.push(...result.nestedData);
+        totalNestedSubcategories += result.nestedSubcategories.length;
+      });
+      
+      console.log(`✅ Added ${totalNestedSubcategories} nested subcategories total`);
+      
+      // Final step: Store all data
+      setCategoryLoadingProgress(prev => ({ 
+        ...prev, 
+        currentStep: "Finalizing data...",
+        loaded: prev.total
+      }));
+      
+      setAllCategoriesData(allData);
+      
+      console.log(`🎉 COMPLETE! Total searchable items: ${allData.length}`);
+      console.log(`📊 Breakdown:`, {
+        categories: allData.filter(d => d.type === "category").length,
+        subcategories: allData.filter(d => d.type === "subcategory").length,
+        nestedSubcategories: allData.filter(d => d.type === "nestedSubcategory").length,
+      });
+      
+      setCategoryLoadingProgress(prev => ({ 
+        ...prev, 
+        currentStep: "✅ All categories loaded!"
+      }));
+      
+    } catch (error) {
+      console.error("❌ Error in comprehensive category fetch:", error);
+      setCategoryLoadingProgress(prev => ({ 
+        ...prev, 
+        currentStep: "❌ Error loading categories"
+      }));
+    } finally {
+      setIsLoadingCategories(false);
+    }
+  }, []);
+
+  // Trigger comprehensive fetch on component mount
+  useEffect(() => {
+    fetchAllCategoryData();
+  }, [fetchAllCategoryData]);
+
+  // Enhanced search filter using the complete dataset
+  const filteredCategories = useMemo(() => {
+    if (!searchQuery.trim() || allCategoriesData.length === 0) return [];
+
+    const query = searchQuery.toLowerCase().trim();
+    const words = query.split(" ").filter((word) => word.length > 0);
+
+    console.log(`🔍 Searching for: "${query}" in ${allCategoriesData.length} items`);
+
+    const results = allCategoriesData
+      .filter((item) => {
+        // Check if any search word matches the item
+        return words.some(
+          (word) =>
+            item.searchTerms.includes(word) ||
+            item.name.toLowerCase().includes(word) ||
+            item.fullPath.toLowerCase().includes(word)
+        );
+      })
+      .sort((a, b) => {
+        // Sort by relevance: exact matches first, then by level
+        const aExactMatch = a.name.toLowerCase() === query;
+        const bExactMatch = b.name.toLowerCase() === query;
+
+        if (aExactMatch && !bExactMatch) return -1;
+        if (!aExactMatch && bExactMatch) return 1;
+
+        // Then sort by name match at the beginning
+        const aStartsWithQuery = a.name.toLowerCase().startsWith(query);
+        const bStartsWithQuery = b.name.toLowerCase().startsWith(query);
+
+        if (aStartsWithQuery && !bStartsWithQuery) return -1;
+        if (!aStartsWithQuery && bStartsWithQuery) return 1;
+
+        // Finally sort by level (categories first, then subcategories, then nested)
+        return a.level - b.level;
+      });
+
+    console.log(`📊 Search results: ${results.length} items found`);
+    console.log(`   - Categories: ${results.filter(r => r.type === "category").length}`);
+    console.log(`   - Subcategories: ${results.filter(r => r.type === "subcategory").length}`);
+    console.log(`   - Nested Subcategories: ${results.filter(r => r.type === "nestedSubcategory").length}`);
+
+    return results;
+  }, [allCategoriesData, searchQuery]);
+
+  const productParams = useMemo(() => {
+    const params: any = {
+      page: currentPage,
+      limit: 12,
+    };
+
+    if (selectedNestedSubCategoryId && selectedNestedSubCategoryId > 0) {
+      params.categoryId = selectedNestedSubCategoryId;
+    } else if (selectedSubCategoryId && selectedSubCategoryId > 0) {
+      params.categoryId = selectedSubCategoryId;
+    } else if (selectedCategoryId && selectedCategoryId > 0) {
+      params.categoryId = selectedCategoryId;
+    } else {
+      console.log("🔍 Fetching all products");
+    }
+
+    return params;
+  }, [
+    currentPage,
+    selectedNestedSubCategoryId,
+    selectedSubCategoryId,
+    selectedCategoryId,
+  ]);
+
+  const {
+    products = [],
+    pagination,
+    isLoading: productsLoading = false,
+    error: productsError = null,
+  } = useProducts(productParams);
+
+  const {
+    addToCart,
+    count: cartCount = 0,
+    cartItems = [],
+    updateCartItem,
+    removeCartItem,
+  } = useCart();
+
+  const {
+    addToWishlist,
+    removeFromWishlist,
+    isInWishlist,
+    isAddingToWishlist = false,
+    isRemovingFromWishlist = false,
+  } = useWishlist();
+
+  const categories = STATIC_CATEGORIES.map((cat) => ({
+    id: cat.entity_id.toString(),
+    name: cat.name,
+    has_children: cat.has_children,
+    image_url: cat.image_url,
+  }));
+
+  // Helper functions
+  const getCartItemForProduct = useCallback(
+    (productId: number) => {
+      return cartItems.find((item) => item.product.id === productId);
+    },
+    [cartItems]
+  );
+
+  const getProductQuantityInCart = useCallback(
+    (productId: number) => {
+      const cartItem = getCartItemForProduct(productId);
+      return cartItem ? cartItem.quantity : 0;
+    },
+    [getCartItemForProduct]
+  );
+
+  // Get local quantity (quantity selector) for a product
+  const getLocalQuantity = useCallback(
+    (productId: number) => {
+      return localQuantities[productId] || 1;
+    },
+    [localQuantities]
+  );
+
+  // Update local quantity (before adding to cart)
+  const updateLocalQuantity = useCallback(
+    (productId: number, quantity: number) => {
+      if (quantity < 1) quantity = 1;
+      if (quantity > 99) quantity = 99;
+
+      setLocalQuantities((prev) => ({
+        ...prev,
+        [productId]: quantity,
+      }));
+    },
+    []
+  );
+
+  const handleAddToCart = useCallback(
+    async (product: Product) => {
+      if (!product || !product.id) {
+        toast({
+          title: "Error",
+          description: "Invalid product data",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const quantityToAdd = getLocalQuantity(product.id);
+      setLoadingProductId(product.id);
+
+      try {
+        await addToCart(
+          { product_id: product.id, quantity: quantityToAdd },
+          {
+            onSuccess: () => {
+              toast({
+                title: "Added to cart",
+                description: `${quantityToAdd} x ${product.name} added to your cart`,
+              });
+              // Reset local quantity after successful add
+              setLocalQuantities((prev) => {
+                const newState = { ...prev };
+                delete newState[product.id];
+                return newState;
+              });
+            },
+            onError: (error: any) => {
+              toast({
+                title: "Error",
+                description: error?.message || "Failed to add product to cart",
+                variant: "destructive",
+              });
+            },
+          }
+        );
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error?.message || "Failed to add product to cart",
+          variant: "destructive",
+        });
+      } finally {
+        setLoadingProductId(null);
+      }
+    },
+    [addToCart, toast, getLocalQuantity]
+  );
+
+  const handleUpdateCartQuantity = useCallback(
+    async (product: Product, newQuantity: number) => {
+      if (!product || !product.id) return;
+
+      const cartItem = getCartItemForProduct(product.id);
+      if (!cartItem) return;
+
+      if (newQuantity < 1) {
+        handleRemoveFromCart(product);
+        return;
+      }
+
+      setUpdatingProductId(product.id);
+      try {
+        await updateCartItem(cartItem.id, { quantity: newQuantity });
+        toast({
+          title: "Cart updated",
+          description: `${product.name} quantity updated`,
+        });
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error?.message || "Failed to update cart",
+          variant: "destructive",
+        });
+      } finally {
+        setUpdatingProductId(null);
+      }
+    },
+    [getCartItemForProduct, updateCartItem, toast]
+  );
+
+  const handleRemoveFromCart = useCallback(
+    async (product: Product) => {
+      if (!product || !product.id) return;
+
+      const cartItem = getCartItemForProduct(product.id);
+      if (!cartItem) return;
+
+      setUpdatingProductId(product.id);
+      try {
+        await removeCartItem(cartItem.id);
+        toast({
+          title: "Removed from cart",
+          description: `${product.name} has been removed from your cart`,
+        });
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error?.message || "Failed to remove from cart",
+          variant: "destructive",
+        });
+      } finally {
+        setUpdatingProductId(null);
+      }
+    },
+    [getCartItemForProduct, removeCartItem, toast]
+  );
+
+  const handleWishlistToggle = useCallback(
+    async (product: Product) => {
+      if (!product || !product.id) return;
+
+      const productId = product.id;
+      try {
+        if (isInWishlist(productId)) {
+          await removeFromWishlist(productId, {
+            onSuccess: () => {
+              toast({
+                title: "Removed from wishlist",
+                description: `${product.name} has been removed from your wishlist`,
+              });
+            },
+            onError: (error: any) => {
+              toast({
+                title: "Error",
+                description: error?.message || "Failed to remove from wishlist",
+                variant: "destructive",
+              });
+            },
+          });
+        } else {
+          await addToWishlist(
+            { product_id: productId },
+            {
+              onSuccess: () => {
+                toast({
+                  title: "Added to wishlist",
+                  description: `${product.name} has been added to your wishlist`,
+                });
+              },
+              onError: (error: any) => {
+                toast({
+                  title: "Error",
+                  description: error?.message || "Failed to add to wishlist",
+                  variant: "destructive",
+                });
+              },
+            }
+          );
+        }
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error?.message || "Failed to update wishlist",
+          variant: "destructive",
+        });
+      }
+    },
+    [isInWishlist, removeFromWishlist, addToWishlist, toast]
+  );
+
+  const handleCategoryChange = useCallback(
+    (event: React.SyntheticEvent, newValue: string) => {
+      if (newValue === "all") {
+        setSelectedCategoryId(null);
+        setSelectedSubCategoryId(null);
+        setSelectedNestedSubCategoryId(null);
+        setExpandedCategory(null);
+      } else {
+        const numCategoryId = parseInt(newValue);
+        if (!isNaN(numCategoryId)) {
+          setSelectedCategoryId(numCategoryId);
+          setSelectedSubCategoryId(null);
+          setSelectedNestedSubCategoryId(null);
+          setExpandedCategory(newValue);
+        }
+      }
+      setCurrentPage(1);
+      setSearchQuery("");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    []
+  );
+
+  const handleSubCategoryClick = useCallback(
+    (subCategoryId: number) => {
+      if (!subCategoryId || subCategoryId <= 0) return;
+
+      if (selectedSubCategoryId === subCategoryId) {
+        setSelectedSubCategoryId(null);
+        setSelectedNestedSubCategoryId(null);
+      } else {
+        setSelectedSubCategoryId(subCategoryId);
+        setSelectedNestedSubCategoryId(null);
+      }
+      setCurrentPage(1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    [selectedSubCategoryId]
+  );
+
+  const handleNestedSubCategoryClick = useCallback(
+    (nestedSubCategoryId: number) => {
+      if (!nestedSubCategoryId || nestedSubCategoryId <= 0) return;
+      setSelectedNestedSubCategoryId(nestedSubCategoryId);
+      setCurrentPage(1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    []
+  );
+
+  const handleSearchResultClick = useCallback((item: CategoryItem) => {
+    if (!item || !item.id) return;
+    setCurrentPage(1);
+
+    if (item.type === "category") {
+      setSelectedCategoryId(item.id);
+      setSelectedSubCategoryId(null);
+      setSelectedNestedSubCategoryId(null);
+      setExpandedCategory(item.id.toString());
+    } else if (item.type === "subcategory") {
+      setSelectedCategoryId(item.parentId);
+      setSelectedSubCategoryId(item.id);
+      setSelectedNestedSubCategoryId(null);
+      setExpandedCategory(item.parentId?.toString());
+    } else if (item.type === "nestedSubcategory") {
+      setSelectedCategoryId(item.grandParentId);
+      setSelectedSubCategoryId(item.parentId);
+      setSelectedNestedSubCategoryId(item.id);
+      setExpandedCategory(item.grandParentId?.toString());
+    }
+
+    setTimeout(() => {
+      setSearchQuery("");
+    }, 100);
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  const clearFilters = useCallback(() => {
+    setSelectedCategoryId(null);
+    setSelectedSubCategoryId(null);
+    setSelectedNestedSubCategoryId(null);
+    setExpandedCategory(null);
+    setSearchQuery("");
+    setCurrentPage(1);
+    setIsMobileSidebarOpen(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  const handleSearchChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const newValue = e.target.value;
+      setSearchQuery(newValue);
+
+      setTimeout(() => {
+        if (searchInputRef.current) {
+          searchInputRef.current.focus();
+        }
+        if (mobileSearchInputRef.current) {
+          mobileSearchInputRef.current.focus();
+        }
+      }, 0);
+    },
+    []
+  );
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery("");
+    setCurrentPage(1);
+  }, []);
+
+  const handleMobileCategorySelect = useCallback(
+    (categoryId: number | null) => {
+      setSelectedCategoryId(categoryId);
+      setSelectedSubCategoryId(null);
+      setSelectedNestedSubCategoryId(null);
+      setExpandedCategory(categoryId?.toString() || null);
+      setCurrentPage(1);
+      setSearchQuery("");
+      setIsMobileSidebarOpen(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    []
+  );
+
+  const handleMobileSubCategorySelect = useCallback((subCategoryId: number) => {
+    if (!subCategoryId || subCategoryId <= 0) return;
+    setSelectedSubCategoryId(subCategoryId);
+    setSelectedNestedSubCategoryId(null);
+    setCurrentPage(1);
+    setIsMobileSidebarOpen(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  const handleMobileNestedSubCategorySelect = useCallback(
+    (nestedSubCategoryId: number) => {
+      if (!nestedSubCategoryId || nestedSubCategoryId <= 0) return;
+      setSelectedNestedSubCategoryId(nestedSubCategoryId);
+      setCurrentPage(1);
+      setIsMobileSidebarOpen(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    []
+  );
+
+  const SidebarContent = React.memo(
+    ({ isMobile = false }: { isMobile?: boolean }) => (
+      <div className="h-full flex flex-col">
+        <div className="p-4 border-b border-gray-200 flex-shrink-0">
+          <h2 className="font-semibold text-gray-900 mb-4">Categories</h2>
+
+          <div className="relative">
+            <TextField
+              inputRef={isMobile ? mobileSearchInputRef : searchInputRef}
+              type="text"
+              placeholder="Search categories..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+              size="small"
+              fullWidth
+              variant="outlined"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={isLoadingCategories}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search className="w-4 h-4 text-gray-400" />
+                  </InputAdornment>
+                ),
+                endAdornment: searchQuery ? (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={handleClearSearch}
+                      size="small"
+                      aria-label="Clear search"
+                      sx={{ color: "gray" }}
+                    >
+                      <X className="w-4 h-4" />
+                    </IconButton>
+                  </InputAdornment>
+                ) : null,
+                sx: {
+                  height: "40px",
+                  fontSize: "14px",
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: "6px",
+                  },
+                },
+              }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  "& fieldset": {
+                    borderColor: "#e5e7eb",
+                  },
+                  "&:hover fieldset": {
+                    borderColor: "#d1d5db",
+                  },
+                  "&.Mui-focused fieldset": {
+                    borderColor: "#dc2626",
+                    borderWidth: "1px",
+                  },
+                },
+              }}
+            />
+          </div>
+
+          {/* Loading progress */}
+          {isLoadingCategories && (
+            <div className="mt-3 text-xs text
