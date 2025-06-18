@@ -102,21 +102,19 @@ export default function StoreProducts() {
     null
   );
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-  const [allNestedSubCategories, setAllNestedSubCategories] = useState<any[]>(
-    []
-  );
-  const [fetchedNestedSubCategoryIds, setFetchedNestedSubCategoryIds] =
-    useState<Set<number>>(new Set());
-  const [isFetchingNested, setIsFetchingNested] = useState(false);
 
+  // Local quantity state for products before adding to cart
   const [localQuantities, setLocalQuantities] = useState<
     Record<number, number>
   >({});
 
+  // Refs to maintain focus
   const searchInputRef = useRef<HTMLInputElement>(null);
   const mobileSearchInputRef = useRef<HTMLInputElement>(null);
 
   const { toast } = useToast();
+
+  // Fixed: Use conditional hooks with proper error handling
   const allCategoryHooks = STATIC_CATEGORIES.map((category) => {
     try {
       return useSubCategories(category.entity_id);
@@ -129,12 +127,17 @@ export default function StoreProducts() {
     }
   });
 
+  // Store additional nested categories data as users explore
+  const [additionalNestedData, setAdditionalNestedData] = useState<any[]>([]);
+
+  // Get currently selected category data for UI display
   const selectedCategoryData = allCategoryHooks.find(
     (_, index) => STATIC_CATEGORIES[index].entity_id === selectedCategoryId
   );
   const subCategories = selectedCategoryData?.subCategories || [];
   const subCategoriesLoading = selectedCategoryData?.isLoading || false;
 
+  // Fixed: Only fetch nested subcategories when we have a valid selectedSubCategoryId
   const {
     subCategories: nestedSubCategories = [],
     isLoading: nestedSubCategoriesLoading = false,
@@ -145,102 +148,7 @@ export default function StoreProducts() {
       : null
   );
 
-  const subcategoriesWithChildren = useMemo(() => {
-    const allSubs: any[] = [];
-    allCategoryHooks.forEach((hookData, categoryIndex) => {
-      if (hookData?.subCategories && !hookData.isLoading) {
-        hookData.subCategories.forEach((subCat: any) => {
-          allSubs.push({
-            ...subCat,
-            parentCategoryId: STATIC_CATEGORIES[categoryIndex].entity_id,
-            parentCategoryName: STATIC_CATEGORIES[categoryIndex].name,
-          });
-        });
-      }
-    });
-
-    return allSubs;
-  }, [allCategoryHooks]);
-
-  const nestedSubCategoryHooks = useMemo(() => {
-    if (subcategoriesWithChildren.length === 0) return [];
-    const subcategoriesToFetch = subcategoriesWithChildren.slice(0, 10);
-
-    return subcategoriesToFetch
-      .map((subCat) => {
-        try {
-          const hookResult = useSubCategories(subCat.entity_id);
-          return {
-            subcategoryId: subCat.entity_id,
-            parentCategoryId: subCat.parentCategoryId,
-            parentCategoryName: subCat.parentCategoryName,
-            subcategoryName: subCat.name,
-            ...hookResult,
-          };
-        } catch (error) {
-          console.error(
-            `Error creating hook for subcategory ${subCat.name}:`,
-            error
-          );
-          return null;
-        }
-      })
-      .filter(Boolean);
-  }, [subcategoriesWithChildren]);
-
-  useEffect(() => {
-    if (nestedSubCategoryHooks.length === 0) return;
-
-    let newNestedSubCategories: any[] = [];
-    let foundAnyNested = false;
-
-    nestedSubCategoryHooks.forEach((hookData) => {
-      if (!hookData) return;
-      if (
-        hookData.subCategories &&
-        hookData.subCategories.length > 0 &&
-        !hookData.isLoading &&
-        !hookData.error &&
-        !fetchedNestedSubCategoryIds.has(hookData.subcategoryId)
-      ) {
-        foundAnyNested = true;
-        const nestedWithMetadata = hookData.subCategories.map(
-          (nestedSubCat: any) => ({
-            id: nestedSubCat.entity_id,
-            name: nestedSubCat.name,
-            type: "nestedSubcategory",
-            level: 3,
-            fullPath: `${hookData.parentCategoryName} > ${hookData.subcategoryName} > ${nestedSubCat.name}`,
-            parentId: hookData.subcategoryId,
-            grandParentId: hookData.parentCategoryId,
-            searchTerms:
-              `${hookData.parentCategoryName} ${hookData.subcategoryName} ${nestedSubCat.name}`.toLowerCase(),
-            description: `${nestedSubCat.name} in ${hookData.subcategoryName}`,
-            parent: `${hookData.parentCategoryName} > ${hookData.subcategoryName}`,
-            has_children: nestedSubCat.has_children || false,
-          })
-        );
-
-        newNestedSubCategories.push(...nestedWithMetadata);
-        setFetchedNestedSubCategoryIds((prev) =>
-          new Set(prev).add(hookData.subcategoryId)
-        );
-      }
-    });
-
-    if (newNestedSubCategories.length > 0) {
-      setAllNestedSubCategories((prev) => [...prev, ...newNestedSubCategories]);
-    } else if (foundAnyNested === false) {
-      console.log(
-        `ℹ️ No nested subcategories found in any of the ${nestedSubCategoryHooks.length} hooks checked`
-      );
-    }
-  }, [
-    nestedSubCategoryHooks,
-    allNestedSubCategories.length,
-    fetchedNestedSubCategoryIds,
-  ]);
-
+  // Add nested subcategories to additional data when they're loaded
   useEffect(() => {
     if (selectedSubCategoryId && nestedSubCategories.length > 0) {
       const parentCategory = STATIC_CATEGORIES.find(
@@ -251,29 +159,27 @@ export default function StoreProducts() {
       );
 
       if (parentCategory && parentSubCategory) {
-        const existingIds = new Set(
-          allNestedSubCategories.map((item) => item.id)
-        );
-        const newNestedData = nestedSubCategories
-          .filter((nested) => !existingIds.has(nested.entity_id))
-          .map((nestedSubCat) => ({
-            id: nestedSubCat.entity_id,
-            name: nestedSubCat.name,
-            type: "nestedSubcategory",
-            level: 3,
-            fullPath: `${parentCategory.name} > ${parentSubCategory.name} > ${nestedSubCat.name}`,
-            parentId: selectedSubCategoryId,
-            grandParentId: selectedCategoryId,
-            searchTerms:
-              `${parentCategory.name} ${parentSubCategory.name} ${nestedSubCat.name}`.toLowerCase(),
-            description: `${nestedSubCat.name} in ${parentSubCategory.name}`,
-            parent: `${parentCategory.name} > ${parentSubCategory.name}`,
-            has_children: nestedSubCat.has_children || false,
-          }));
+        const newNestedData = nestedSubCategories.map((nestedSubCat) => ({
+          id: nestedSubCat.entity_id,
+          name: nestedSubCat.name,
+          type: "nestedSubcategory",
+          level: 3,
+          fullPath: `${parentCategory.name} > ${parentSubCategory.name} > ${nestedSubCat.name}`,
+          parentId: selectedSubCategoryId,
+          grandParentId: selectedCategoryId,
+          searchTerms:
+            `${parentCategory.name} ${parentSubCategory.name} ${nestedSubCat.name}`.toLowerCase(),
+          description: `Nested Subcategory: ${nestedSubCat.name} in ${parentSubCategory.name}`,
+          parent: `${parentCategory.name} > ${parentSubCategory.name}`,
+        }));
 
-        if (newNestedData.length > 0) {
-          setAllNestedSubCategories((prev) => [...prev, ...newNestedData]);
-        }
+        setAdditionalNestedData((prev) => {
+          // Remove existing nested subcategories for this subcategory and add new ones
+          const filtered = prev.filter(
+            (item) => item.parentId !== selectedSubCategoryId
+          );
+          return [...filtered, ...newNestedData];
+        });
       }
     }
   }, [
@@ -281,12 +187,13 @@ export default function StoreProducts() {
     nestedSubCategories,
     subCategories,
     selectedCategoryId,
-    allNestedSubCategories,
   ]);
 
+  // Build comprehensive search data from all hook results
   const allCategoriesData = useMemo(() => {
     const allData: any[] = [];
 
+    // Add main categories first
     STATIC_CATEGORIES.forEach((cat) => {
       allData.push({
         id: cat.entity_id,
@@ -299,10 +206,10 @@ export default function StoreProducts() {
         parent: null,
         parentId: null,
         grandParentId: null,
-        has_children: cat.has_children || false,
       });
     });
 
+    // Add subcategories from all categories with error handling
     STATIC_CATEGORIES.forEach((category, index) => {
       const hookData = allCategoryHooks[index];
       if (hookData && !hookData.error && hookData.subCategories) {
@@ -318,68 +225,52 @@ export default function StoreProducts() {
             searchTerms: `${category.name} ${subCat.name}`.toLowerCase(),
             description: `Subcategory: ${subCat.name} in ${category.name}`,
             parent: category.name,
-            has_children: subCat.has_children || false,
           });
         });
       }
     });
 
-    allData.push(...allNestedSubCategories);
-
-    console.log(
-      `📋 Search index contains: ${
-        allData.filter((d) => d.type === "category").length
-      } categories, ${
-        allData.filter((d) => d.type === "subcategory").length
-      } subcategories, ${
-        allData.filter((d) => d.type === "nestedSubcategory").length
-      } nested subcategories`
-    );
+    // Add nested subcategories that have been loaded through navigation
+    allData.push(...additionalNestedData);
 
     return allData;
-  }, [allCategoryHooks, allNestedSubCategories]);
+  }, [allCategoryHooks, additionalNestedData]);
 
+  // Simple and comprehensive search filter
   const filteredCategories = useMemo(() => {
     if (!searchQuery.trim()) return [];
 
     const query = searchQuery.toLowerCase().trim();
     const words = query.split(" ").filter((word) => word.length > 0);
 
-    console.log(
-      `🔍 Searching for: "${query}" in ${allCategoriesData.length} items`
-    );
-
+    // Search through ALL available data
     const results = allCategoriesData
       .filter((item) => {
-        const matches = words.some(
+        // Check if any search word matches the item
+        return words.some(
           (word) =>
             item.searchTerms.includes(word) ||
-            item.name.toLowerCase().includes(word) ||
-            item.fullPath.toLowerCase().includes(word)
+            item.name.toLowerCase().includes(word)
         );
-
-        if (matches && item.type === "nestedSubcategory") {
-          console.log(
-            `✅ Found nested subcategory match: ${item.name} (${item.fullPath})`
-          );
-        }
-
-        return matches;
       })
       .sort((a, b) => {
+        // Sort by relevance: exact matches first, then by level
         const aExactMatch = a.name.toLowerCase() === query;
         const bExactMatch = b.name.toLowerCase() === query;
 
         if (aExactMatch && !bExactMatch) return -1;
         if (!aExactMatch && bExactMatch) return 1;
 
+        // Then sort by name match at the beginning
         const aStartsWithQuery = a.name.toLowerCase().startsWith(query);
         const bStartsWithQuery = b.name.toLowerCase().startsWith(query);
 
         if (aStartsWithQuery && !bStartsWithQuery) return -1;
         if (!aStartsWithQuery && bStartsWithQuery) return 1;
+
         return a.level - b.level;
       });
+
     return results;
   }, [allCategoriesData, searchQuery]);
 
@@ -437,6 +328,7 @@ export default function StoreProducts() {
     image_url: cat.image_url,
   }));
 
+  // Helper functions
   const getCartItemForProduct = useCallback(
     (productId: number) => {
       return cartItems.find((item) => item.product.id === productId);
@@ -452,6 +344,7 @@ export default function StoreProducts() {
     [getCartItemForProduct]
   );
 
+  // Get local quantity (quantity selector) for a product
   const getLocalQuantity = useCallback(
     (productId: number) => {
       return localQuantities[productId] || 1;
@@ -459,6 +352,7 @@ export default function StoreProducts() {
     [localQuantities]
   );
 
+  // Update local quantity (before adding to cart)
   const updateLocalQuantity = useCallback(
     (productId: number, quantity: number) => {
       if (quantity < 1) quantity = 1;
@@ -495,7 +389,7 @@ export default function StoreProducts() {
                 title: "Added to cart",
                 description: `${quantityToAdd} x ${product.name} added to your cart`,
               });
-
+              // Reset local quantity after successful add
               setLocalQuantities((prev) => {
                 const newState = { ...prev };
                 delete newState[product.id];
@@ -844,6 +738,7 @@ export default function StoreProducts() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
+          {/* Search Results */}
           {searchQuery && filteredCategories.length > 0 && (
             <div className="mb-4">
               <div className="text-xs text-gray-500 mb-2">
@@ -889,19 +784,13 @@ export default function StoreProducts() {
                         </span>
                       </div>
                     </div>
-                    {/* Show if has children */}
-                    {item.has_children && (
-                      <div className="flex items-center mt-2 text-xs text-gray-400">
-                        <Folder className="w-3 h-3 mr-1" />
-                        Has subcategories
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
             </div>
           )}
 
+          {/* No search results */}
           {searchQuery && filteredCategories.length === 0 && (
             <div className="mb-4 text-center py-8">
               <div className="text-sm text-gray-500">
@@ -916,6 +805,7 @@ export default function StoreProducts() {
             </div>
           )}
 
+          {/* Category List */}
           {!searchQuery && (
             <div className="space-y-1">
               <div
@@ -1631,5 +1521,3 @@ export default function StoreProducts() {
     </div>
   );
 }
-
-
