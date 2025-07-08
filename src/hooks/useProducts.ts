@@ -36,6 +36,63 @@ export interface SingleProductResponse {
   data: Product;
 }
 
+// Search interfaces
+export interface SearchProduct {
+  id: string | number;
+  name: string;
+  price: number;
+  description?: string;
+  link?: string;
+  image?: string;
+  product_code?: string;
+  quantity?: number;
+  tags?: string;
+  reviews_count?: number;
+  reviews_average?: number;
+  category?: string;
+  original_data?: any;
+}
+
+export interface SearchPagination {
+  query: string;
+  max_results: number;
+  start_index: number;
+  total: number;
+  returned?: number;
+}
+
+export interface SearchResponse {
+  success: boolean;
+  data: {
+    query: string;
+    products: SearchProduct[];
+    pagination: SearchPagination;
+    meta: {
+      source: string;
+      timestamp: string;
+      total_returned: number;
+    };
+  };
+}
+
+export interface SearchSuggestionsResponse {
+  success: boolean;
+  data: {
+    query: string;
+    suggestions: Array<{
+      text: string;
+      value: string;
+      category: string;
+    }>;
+  };
+}
+
+export interface PopularSearchesResponse {
+  success: boolean;
+  data: {
+    popular_searches: string[];
+  };
+}
 
 export interface Category {
   id: string;
@@ -76,10 +133,16 @@ interface UseProductsParams {
   categoryId?: number;
 }
 
+interface UseSearchParams {
+  query: string;
+  max_results?: number;
+  start_index?: number;
+  raw?: boolean;
+}
+
 interface UseCategoriesParams {
   categoryId?: number;
 }
-
 
 const axiosInstance = axios.create({
   baseURL: `${import.meta.env.VITE_API_URL}`,
@@ -96,7 +159,6 @@ axiosInstance.interceptors.request.use((config) => {
   return config;
 });
 
-
 const handleApiError = (error: any) => {
   let message = "An unexpected error occurred.";
   if (error.response?.data?.message) {
@@ -108,7 +170,6 @@ const handleApiError = (error: any) => {
   }
   throw new Error(message);
 };
-
 
 const ProductService = {
   getProducts: async (
@@ -139,8 +200,55 @@ const ProductService = {
       handleApiError(error);
     }
   },
-};
 
+  // NEW: Search products
+  searchProducts: async (params: UseSearchParams): Promise<SearchResponse> => {
+    try {
+      const { query, max_results = 10, start_index = 0, raw = false } = params;
+
+      if (!query || query.trim() === "") {
+        throw new Error("Search query is required");
+      }
+
+      const response = await axiosInstance.get("/products/search", {
+        params: {
+          q: query.trim(),
+          max_results,
+          start_index,
+          raw,
+        },
+      });
+      return response.data;
+    } catch (error) {
+      handleApiError(error);
+    }
+  },
+
+  // NEW: Get search suggestions
+  getSearchSuggestions: async (
+    query: string,
+    limit: number = 5
+  ): Promise<SearchSuggestionsResponse> => {
+    try {
+      const response = await axiosInstance.get("/products/search/suggestions", {
+        params: { q: query, limit },
+      });
+      return response.data;
+    } catch (error) {
+      handleApiError(error);
+    }
+  },
+
+  // NEW: Get popular searches
+  getPopularSearches: async (): Promise<PopularSearchesResponse> => {
+    try {
+      const response = await axiosInstance.get("/products/search/popular");
+      return response.data;
+    } catch (error) {
+      handleApiError(error);
+    }
+  },
+};
 
 const CategoryService = {
   getCategories: async (): Promise<CategoriesResponse> => {
@@ -166,6 +274,7 @@ const CategoryService = {
   },
 };
 
+// Existing hooks
 export const useProducts = (params: UseProductsParams = {}) => {
   const {
     data: productsResponse,
@@ -189,7 +298,6 @@ export const useProducts = (params: UseProductsParams = {}) => {
   };
 };
 
-
 export const useProduct = (id: number) => {
   const {
     data: productResponse,
@@ -212,7 +320,6 @@ export const useProduct = (id: number) => {
   };
 };
 
-
 export const useCategories = () => {
   const {
     data: categoriesResponse,
@@ -233,7 +340,6 @@ export const useCategories = () => {
     refetch,
   };
 };
-
 
 export const useSubCategories = (categoryId: number) => {
   const {
@@ -257,6 +363,75 @@ export const useSubCategories = (categoryId: number) => {
   };
 };
 
+// NEW: Search hooks
+export const useSearchProducts = (params: UseSearchParams) => {
+  const {
+    data: searchResponse,
+    isLoading,
+    error,
+    refetch,
+  } = useApiQuery({
+    queryKey: ["search-products", params],
+    queryFn: () => ProductService.searchProducts(params),
+    enabled: !!params.query && params.query.trim().length > 0,
+  });
+
+  const searchResults = searchResponse?.data?.products ?? [];
+  const searchPagination = searchResponse?.data?.pagination ?? null;
+  const searchMeta = searchResponse?.data?.meta ?? null;
+
+  return {
+    searchResults,
+    searchPagination,
+    searchMeta,
+    isLoading,
+    error,
+    refetch,
+  };
+};
+
+export const useSearchSuggestions = (query: string, limit: number = 5) => {
+  const {
+    data: suggestionsResponse,
+    isLoading,
+    error,
+    refetch,
+  } = useApiQuery({
+    queryKey: ["search-suggestions", query, limit],
+    queryFn: () => ProductService.getSearchSuggestions(query, limit),
+    enabled: !!query && query.trim().length >= 2,
+  });
+
+  const suggestions = suggestionsResponse?.data?.suggestions ?? [];
+
+  return {
+    suggestions,
+    isLoading,
+    error,
+    refetch,
+  };
+};
+
+export const usePopularSearches = () => {
+  const {
+    data: popularResponse,
+    isLoading,
+    error,
+    refetch,
+  } = useApiQuery({
+    queryKey: ["popular-searches"],
+    queryFn: () => ProductService.getPopularSearches(),
+  });
+
+  const popularSearches = popularResponse?.data?.popular_searches ?? [];
+
+  return {
+    popularSearches,
+    isLoading,
+    error,
+    refetch,
+  };
+};
 
 export const useProductsWithCategories = (params: UseProductsParams = {}) => {
   const productsHook = useProducts(params);

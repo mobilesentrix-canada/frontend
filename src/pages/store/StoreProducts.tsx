@@ -15,13 +15,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
   useProducts,
   useCategories,
   useSubCategories,
+  useSearchProducts,
+  useSearchSuggestions,
   Product,
+  SearchProduct,
 } from "@/hooks/useProducts";
 import { useCart, useWishlist } from "@/hooks/useCart";
 import {
@@ -35,24 +37,13 @@ import {
   ChevronLeft,
   Search,
   Minus,
-  ArrowRight,
-  Folder,
-  FolderOpen,
-  Menu,
   Filter,
+  Loader2,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { STATIC_CATEGORIES } from "@/db";
-import {
-  Tabs,
-  Tab,
-  Box,
-  TextField,
-  InputAdornment,
-  IconButton,
-} from "@mui/material";
-import { styled } from "@mui/material/styles";
+import { TextField, InputAdornment, IconButton } from "@mui/material";
 import {
   Sheet,
   SheetContent,
@@ -61,31 +52,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 
-// Simple styled tabs
-const StyledTabs = styled(Tabs)({
-  minHeight: 40,
-  "& .MuiTabs-indicator": {
-    backgroundColor: "#dc2626",
-    height: 2,
-  },
-});
-
-const StyledTab = styled(Tab)({
-  textTransform: "none",
-  minWidth: 100,
-  fontWeight: 500,
-  fontSize: "14px",
-  color: "#6b7280",
-  "&.Mui-selected": {
-    color: "#dc2626",
-    fontWeight: 600,
-  },
-  "&:hover": {
-    color: "#374151",
-  },
-});
-
-export default function StoreProducts() {
+export default function StoreProducts(): JSX.Element {
+  // Category states
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
     null
   );
@@ -94,208 +62,82 @@ export default function StoreProducts() {
   >(null);
   const [selectedNestedSubCategoryId, setSelectedNestedSubCategoryId] =
     useState<number | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  // Simple search states
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [isSearchMode, setIsSearchMode] = useState<boolean>(false);
+  const [debouncedQuery, setDebouncedQuery] = useState<string>("");
+  const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
+
+  // UI states
   const [loadingProductId, setLoadingProductId] = useState<number | null>(null);
   const [updatingProductId, setUpdatingProductId] = useState<number | null>(
     null
   );
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] =
+    useState<boolean>(false);
+  const [localQuantities, setLocalQuantities] = useState<{
+    [key: number]: number;
+  }>({});
 
-  // Local quantity state for products before adding to cart
-  const [localQuantities, setLocalQuantities] = useState<
-    Record<number, number>
-  >({});
-
-  // Refs to maintain focus
+  // Refs
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
 
   const { toast } = useToast();
 
-  // Fixed: Use conditional hooks with proper error handling
-  const allCategoryHooks = STATIC_CATEGORIES.map((category) => {
-    try {
-      return useSubCategories(category.entity_id);
-    } catch (error) {
-      console.error(
-        `Error fetching subcategories for category ${category.entity_id}:`,
-        error
-      );
-      return { subCategories: [], isLoading: false, error };
-    }
-  });
+  // Simple debounce effect
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-  // Store additional nested categories data as users explore
-  const [additionalNestedData, setAdditionalNestedData] = useState<any[]>([]);
+  // Get subcategories for selected category
+  const { subCategories = [], isLoading: subCategoriesLoading = false } =
+    useSubCategories(selectedCategoryId);
 
-  // Get currently selected category data for UI display
-  const selectedCategoryData = allCategoryHooks.find(
-    (_, index) => STATIC_CATEGORIES[index].entity_id === selectedCategoryId
-  );
-  const subCategories = selectedCategoryData?.subCategories || [];
-  const subCategoriesLoading = selectedCategoryData?.isLoading || false;
-
-  // Fixed: Only fetch nested subcategories when we have a valid selectedSubCategoryId
+  // Get nested subcategories
   const {
     subCategories: nestedSubCategories = [],
     isLoading: nestedSubCategoriesLoading = false,
-    error: nestedSubCategoriesError = null,
-  } = useSubCategories(
-    selectedSubCategoryId && selectedSubCategoryId > 0
-      ? selectedSubCategoryId
-      : null
-  );
+  } = useSubCategories(selectedSubCategoryId);
 
-  // Add nested subcategories to additional data when they're loaded
-  useEffect(() => {
-    if (selectedSubCategoryId && nestedSubCategories.length > 0) {
-      const parentCategory = STATIC_CATEGORIES.find(
-        (cat) => cat.entity_id === selectedCategoryId
-      );
-      const parentSubCategory = subCategories.find(
-        (sub) => sub.entity_id === selectedSubCategoryId
-      );
+  // Always call hooks - fix the conditional hook issue
+  const {
+    searchResults = [],
+    searchPagination,
+    isLoading: searchLoading = false,
+    error: searchError = null,
+  } = useSearchProducts({
+    query: isSearchMode ? searchQuery.trim() : "",
+    max_results: 12,
+    start_index: (currentPage - 1) * 12,
+  });
 
-      if (parentCategory && parentSubCategory) {
-        const newNestedData = nestedSubCategories.map((nestedSubCat) => ({
-          id: nestedSubCat.entity_id,
-          name: nestedSubCat.name,
-          type: "nestedSubcategory",
-          level: 3,
-          fullPath: `${parentCategory.name} > ${parentSubCategory.name} > ${nestedSubCat.name}`,
-          parentId: selectedSubCategoryId,
-          grandParentId: selectedCategoryId,
-          searchTerms:
-            `${parentCategory.name} ${parentSubCategory.name} ${nestedSubCat.name}`.toLowerCase(),
-          description: `Nested Subcategory: ${nestedSubCat.name} in ${parentSubCategory.name}`,
-          parent: `${parentCategory.name} > ${parentSubCategory.name}`,
-        }));
+  const { suggestions = [], isLoading: suggestionsLoading = false } =
+    useSearchSuggestions(debouncedQuery.length >= 2 ? debouncedQuery : "", 5);
 
-        setAdditionalNestedData((prev) => {
-          // Remove existing nested subcategories for this subcategory and add new ones
-          const filtered = prev.filter(
-            (item) => item.parentId !== selectedSubCategoryId
-          );
-          return [...filtered, ...newNestedData];
-        });
-      }
-    }
-  }, [
-    selectedSubCategoryId,
-    nestedSubCategories,
-    subCategories,
-    selectedCategoryId,
-  ]);
-
-  // Build comprehensive search data from all hook results
-  const allCategoriesData = useMemo(() => {
-    const allData: any[] = [];
-
-    // Add main categories first
-    STATIC_CATEGORIES.forEach((cat) => {
-      allData.push({
-        id: cat.entity_id,
-        name: cat.name,
-        type: "category",
-        level: 1,
-        fullPath: cat.name,
-        searchTerms: cat.name.toLowerCase(),
-        description: `Category: ${cat.name}`,
-        parent: null,
-        parentId: null,
-        grandParentId: null,
-      });
-    });
-
-    // Add subcategories from all categories with error handling
-    STATIC_CATEGORIES.forEach((category, index) => {
-      const hookData = allCategoryHooks[index];
-      if (hookData && !hookData.error && hookData.subCategories) {
-        hookData.subCategories.forEach((subCat: any) => {
-          allData.push({
-            id: subCat.entity_id,
-            name: subCat.name,
-            type: "subcategory",
-            level: 2,
-            fullPath: `${category.name} > ${subCat.name}`,
-            parentId: category.entity_id,
-            grandParentId: null,
-            searchTerms: `${category.name} ${subCat.name}`.toLowerCase(),
-            description: `Subcategory: ${subCat.name} in ${category.name}`,
-            parent: category.name,
-          });
-        });
-      }
-    });
-
-    // Add nested subcategories that have been loaded through navigation
-    allData.push(...additionalNestedData);
-
-    return allData;
-  }, [allCategoryHooks, additionalNestedData]);
-
-  // Simple and comprehensive search filter
-  const filteredCategories = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-
-    const query = searchQuery.toLowerCase().trim();
-    const words = query.split(" ").filter((word) => word.length > 0);
-
-    // Search through ALL available data
-    const results = allCategoriesData
-      .filter((item) => {
-        // Check if any search word matches the item
-        return words.some(
-          (word) =>
-            item.searchTerms.includes(word) ||
-            item.name.toLowerCase().includes(word)
-        );
-      })
-      .sort((a, b) => {
-        // Sort by relevance: exact matches first, then by level
-        const aExactMatch = a.name.toLowerCase() === query;
-        const bExactMatch = b.name.toLowerCase() === query;
-
-        if (aExactMatch && !bExactMatch) return -1;
-        if (!aExactMatch && bExactMatch) return 1;
-
-        // Then sort by name match at the beginning
-        const aStartsWithQuery = a.name.toLowerCase().startsWith(query);
-        const bStartsWithQuery = b.name.toLowerCase().startsWith(query);
-
-        if (aStartsWithQuery && !bStartsWithQuery) return -1;
-        if (!aStartsWithQuery && bStartsWithQuery) return 1;
-
-        return a.level - b.level;
-      });
-
-    return results;
-  }, [allCategoriesData, searchQuery]);
-
+  // Regular products
   const productParams = useMemo(() => {
-    const params: any = {
-      page: currentPage,
-      limit: 12,
-    };
+    if (isSearchMode) return null;
 
-    if (selectedNestedSubCategoryId && selectedNestedSubCategoryId > 0) {
+    const params: any = { page: currentPage, limit: 12 };
+    if (selectedNestedSubCategoryId) {
       params.categoryId = selectedNestedSubCategoryId;
-    } else if (selectedSubCategoryId && selectedSubCategoryId > 0) {
+    } else if (selectedSubCategoryId) {
       params.categoryId = selectedSubCategoryId;
-    } else if (selectedCategoryId && selectedCategoryId > 0) {
+    } else if (selectedCategoryId) {
       params.categoryId = selectedCategoryId;
-    } else {
-      console.log("🔍 Fetching all products");
     }
-
     return params;
   }, [
     currentPage,
     selectedNestedSubCategoryId,
     selectedSubCategoryId,
     selectedCategoryId,
+    isSearchMode,
   ]);
 
   const {
@@ -303,7 +145,7 @@ export default function StoreProducts() {
     pagination,
     isLoading: productsLoading = false,
     error: productsError = null,
-  } = useProducts(productParams);
+  } = useProducts(productParams || {});
 
   const {
     addToCart,
@@ -313,20 +155,78 @@ export default function StoreProducts() {
     removeCartItem,
   } = useCart();
 
-  const {
-    addToWishlist,
-    removeFromWishlist,
-    isInWishlist,
-    isAddingToWishlist = false,
-    isRemovingFromWishlist = false,
-  } = useWishlist();
+  const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
 
-  const categories = STATIC_CATEGORIES.map((cat) => ({
-    id: cat.entity_id.toString(),
-    name: cat.name,
-    has_children: cat.has_children,
-    image_url: cat.image_url,
-  }));
+  // Simple search input handler
+  const handleSearchInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value;
+      setSearchQuery(value);
+      if (value.length >= 2 && !isSearchMode) {
+        setShowSuggestions(true);
+      } else {
+        setShowSuggestions(false);
+      }
+    },
+    [isSearchMode]
+  );
+
+  // Simple search handler
+  const handleSearch = useCallback(() => {
+    if (!searchQuery.trim()) {
+      setIsSearchMode(false);
+      return;
+    }
+    setIsSearchMode(true);
+    setCurrentPage(1);
+    setSelectedCategoryId(null);
+    setSelectedSubCategoryId(null);
+    setSelectedNestedSubCategoryId(null);
+    setShowSuggestions(false);
+  }, [searchQuery]);
+
+  // Handle Enter key
+  const handleKeyPress = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") {
+        handleSearch();
+      }
+      if (e.key === "Escape") {
+        setShowSuggestions(false);
+      }
+    },
+    [handleSearch]
+  );
+
+  // Handle suggestion click
+  const handleSuggestionClick = useCallback((suggestion: any) => {
+    setSearchQuery(suggestion.text);
+    setShowSuggestions(false);
+    setIsSearchMode(true);
+    setCurrentPage(1);
+    setSelectedCategoryId(null);
+    setSelectedSubCategoryId(null);
+    setSelectedNestedSubCategoryId(null);
+  }, []);
+
+  // Clear search
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery("");
+    setIsSearchMode(false);
+    setCurrentPage(1);
+    setShowSuggestions(false);
+  }, []);
+
+  // Clear all filters
+  const clearFilters = useCallback(() => {
+    setSelectedCategoryId(null);
+    setSelectedSubCategoryId(null);
+    setSelectedNestedSubCategoryId(null);
+    setSearchQuery("");
+    setIsSearchMode(false);
+    setCurrentPage(1);
+    setShowSuggestions(false);
+  }, []);
 
   // Helper functions
   const getCartItemForProduct = useCallback(
@@ -337,63 +237,75 @@ export default function StoreProducts() {
   );
 
   const getProductQuantityInCart = useCallback(
-    (productId: number) => {
+    (productId: number): number => {
       const cartItem = getCartItemForProduct(productId);
       return cartItem ? cartItem.quantity : 0;
     },
     [getCartItemForProduct]
   );
 
-  // Get local quantity (quantity selector) for a product
   const getLocalQuantity = useCallback(
-    (productId: number) => {
+    (productId: number): number => {
       return localQuantities[productId] || 1;
     },
     [localQuantities]
   );
 
-  // Update local quantity (before adding to cart)
   const updateLocalQuantity = useCallback(
     (productId: number, quantity: number) => {
-      if (quantity < 1) quantity = 1;
-      if (quantity > 99) quantity = 99;
-
-      setLocalQuantities((prev) => ({
-        ...prev,
-        [productId]: quantity,
-      }));
+      const clampedQuantity = Math.max(1, Math.min(99, quantity));
+      setLocalQuantities((prev) => ({ ...prev, [productId]: clampedQuantity }));
     },
     []
   );
 
-  const handleAddToCart = useCallback(
-    async (product: Product) => {
-      if (!product || !product.id) {
-        toast({
-          title: "Error",
-          description: "Invalid product data",
-          variant: "destructive",
-        });
-        return;
+  // Convert SearchProduct to Product format
+  const ensureProduct = useCallback(
+    (product: Product | SearchProduct): Product => {
+      if ("original_data" in product) {
+        const id =
+          typeof product.id === "string"
+            ? parseInt(product.id, 10)
+            : product.id;
+        return {
+          id,
+          name: product.name,
+          price: product.price || 0,
+          sku: product.product_code || "",
+          manufacturer: product.category || "",
+          model: "",
+          category_ids: [],
+          weight: "",
+          status: 1,
+          description: product.description || "",
+          badges: null,
+          image: product.image || "",
+        };
       }
+      return product as Product;
+    },
+    []
+  );
 
-      const quantityToAdd = getLocalQuantity(product.id);
-      setLoadingProductId(product.id);
+  // Cart operations
+  const handleAddToCart = useCallback(
+    async (product: Product | SearchProduct) => {
+      const productToAdd = ensureProduct(product);
+      const quantityToAdd = getLocalQuantity(productToAdd.id);
+      setLoadingProductId(productToAdd.id);
 
       try {
         await addToCart(
-          { product_id: product.id, quantity: quantityToAdd },
+          { product_id: productToAdd.id, quantity: quantityToAdd },
           {
             onSuccess: () => {
               toast({
                 title: "Added to cart",
-                description: `${quantityToAdd} x ${product.name} added to your cart`,
+                description: `${quantityToAdd} x ${productToAdd.name} added to your cart`,
               });
-              // Reset local quantity after successful add
               setLocalQuantities((prev) => {
-                const newState = { ...prev };
-                delete newState[product.id];
-                return newState;
+                const { [productToAdd.id]: removed, ...rest } = prev;
+                return rest;
               });
             },
             onError: (error: any) => {
@@ -415,107 +327,72 @@ export default function StoreProducts() {
         setLoadingProductId(null);
       }
     },
-    [addToCart, toast, getLocalQuantity]
+    [addToCart, toast, getLocalQuantity, ensureProduct]
   );
 
   const handleUpdateCartQuantity = useCallback(
-    async (product: Product, newQuantity: number) => {
-      if (!product || !product.id) return;
-
-      const cartItem = getCartItemForProduct(product.id);
+    async (product: Product | SearchProduct, newQuantity: number) => {
+      const productToUpdate = ensureProduct(product);
+      const cartItem = getCartItemForProduct(productToUpdate.id);
       if (!cartItem) return;
 
       if (newQuantity < 1) {
-        handleRemoveFromCart(product);
+        setUpdatingProductId(productToUpdate.id);
+        try {
+          await removeCartItem(cartItem.id);
+          toast({
+            title: "Removed from cart",
+            description: `${productToUpdate.name} has been removed from your cart`,
+          });
+        } finally {
+          setUpdatingProductId(null);
+        }
         return;
       }
 
-      setUpdatingProductId(product.id);
+      setUpdatingProductId(productToUpdate.id);
       try {
         await updateCartItem(cartItem.id, { quantity: newQuantity });
         toast({
           title: "Cart updated",
-          description: `${product.name} quantity updated`,
-        });
-      } catch (error: any) {
-        toast({
-          title: "Error",
-          description: error?.message || "Failed to update cart",
-          variant: "destructive",
+          description: `${productToUpdate.name} quantity updated`,
         });
       } finally {
         setUpdatingProductId(null);
       }
     },
-    [getCartItemForProduct, updateCartItem, toast]
-  );
-
-  const handleRemoveFromCart = useCallback(
-    async (product: Product) => {
-      if (!product || !product.id) return;
-
-      const cartItem = getCartItemForProduct(product.id);
-      if (!cartItem) return;
-
-      setUpdatingProductId(product.id);
-      try {
-        await removeCartItem(cartItem.id);
-        toast({
-          title: "Removed from cart",
-          description: `${product.name} has been removed from your cart`,
-        });
-      } catch (error: any) {
-        toast({
-          title: "Error",
-          description: error?.message || "Failed to remove from cart",
-          variant: "destructive",
-        });
-      } finally {
-        setUpdatingProductId(null);
-      }
-    },
-    [getCartItemForProduct, removeCartItem, toast]
+    [
+      getCartItemForProduct,
+      updateCartItem,
+      removeCartItem,
+      toast,
+      ensureProduct,
+    ]
   );
 
   const handleWishlistToggle = useCallback(
-    async (product: Product) => {
-      if (!product || !product.id) return;
+    async (product: Product | SearchProduct) => {
+      const productForWishlist = ensureProduct(product);
+      const productId = productForWishlist.id;
 
-      const productId = product.id;
       try {
         if (isInWishlist(productId)) {
           await removeFromWishlist(productId, {
-            onSuccess: () => {
+            onSuccess: () =>
               toast({
                 title: "Removed from wishlist",
-                description: `${product.name} has been removed from your wishlist`,
-              });
-            },
-            onError: (error: any) => {
-              toast({
-                title: "Error",
-                description: error?.message || "Failed to remove from wishlist",
-                variant: "destructive",
-              });
-            },
+                description: `${productForWishlist.name} has been removed from your wishlist`,
+              }),
           });
         } else {
           await addToWishlist(
             { product_id: productId },
             {
-              onSuccess: () => {
+              onSuccess: () =>
                 toast({
                   title: "Added to wishlist",
-                  description: `${product.name} has been added to your wishlist`,
-                });
-              },
-              onError: (error: any) => {
-                toast({
-                  title: "Error",
-                  description: error?.message || "Failed to add to wishlist",
-                  variant: "destructive",
-                });
-              },
+                  description: `${productForWishlist.name} has been added to your wishlist`,
+                }),
             }
           );
         }
@@ -527,506 +404,291 @@ export default function StoreProducts() {
         });
       }
     },
-    [isInWishlist, removeFromWishlist, addToWishlist, toast]
+    [isInWishlist, removeFromWishlist, addToWishlist, toast, ensureProduct]
   );
 
-  const handleCategoryChange = useCallback(
-    (event: React.SyntheticEvent, newValue: string) => {
-      if (newValue === "all") {
+  // Category handlers
+  const handleCategoryClick = useCallback(
+    (categoryId: number) => {
+      if (selectedCategoryId === categoryId) {
         setSelectedCategoryId(null);
         setSelectedSubCategoryId(null);
         setSelectedNestedSubCategoryId(null);
-        setExpandedCategory(null);
       } else {
-        const numCategoryId = parseInt(newValue);
-        if (!isNaN(numCategoryId)) {
-          setSelectedCategoryId(numCategoryId);
-          setSelectedSubCategoryId(null);
-          setSelectedNestedSubCategoryId(null);
-          setExpandedCategory(newValue);
-        }
+        setSelectedCategoryId(categoryId);
+        setSelectedSubCategoryId(null);
+        setSelectedNestedSubCategoryId(null);
       }
       setCurrentPage(1);
-      setSearchQuery("");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      setIsSearchMode(false);
     },
-    []
+    [selectedCategoryId]
   );
 
   const handleSubCategoryClick = useCallback(
     (subCategoryId: number) => {
-      if (!subCategoryId || subCategoryId <= 0) return;
-
-      if (selectedSubCategoryId === subCategoryId) {
-        setSelectedSubCategoryId(null);
-        setSelectedNestedSubCategoryId(null);
-      } else {
-        setSelectedSubCategoryId(subCategoryId);
-        setSelectedNestedSubCategoryId(null);
-      }
+      setSelectedSubCategoryId(
+        selectedSubCategoryId === subCategoryId ? null : subCategoryId
+      );
+      setSelectedNestedSubCategoryId(null);
       setCurrentPage(1);
-      window.scrollTo({ top: 0, behavior: "smooth" });
     },
     [selectedSubCategoryId]
   );
 
   const handleNestedSubCategoryClick = useCallback(
     (nestedSubCategoryId: number) => {
-      if (!nestedSubCategoryId || nestedSubCategoryId <= 0) return;
       setSelectedNestedSubCategoryId(nestedSubCategoryId);
       setCurrentPage(1);
-      window.scrollTo({ top: 0, behavior: "smooth" });
     },
     []
   );
 
-  const handleSearchResultClick = useCallback((item: any) => {
-    if (!item || !item.id) return;
-    setCurrentPage(1);
+  // Get display data
+  const displayProducts = isSearchMode ? searchResults : products;
+  const displayPagination = isSearchMode ? searchPagination : pagination;
+  const displayLoading = isSearchMode ? searchLoading : productsLoading;
+  const displayError = isSearchMode ? searchError : productsError;
 
-    if (item.type === "category") {
-      setSelectedCategoryId(item.id);
-      setSelectedSubCategoryId(null);
-      setSelectedNestedSubCategoryId(null);
-      setExpandedCategory(item.id.toString());
-    } else if (item.type === "subcategory") {
-      setSelectedCategoryId(item.parentId);
-      setSelectedSubCategoryId(item.id);
-      setSelectedNestedSubCategoryId(null);
-      setExpandedCategory(item.parentId?.toString());
-    } else if (item.type === "nestedSubcategory") {
-      setSelectedCategoryId(item.grandParentId);
-      setSelectedSubCategoryId(item.parentId);
-      setSelectedNestedSubCategoryId(item.id);
-      setExpandedCategory(item.grandParentId?.toString());
-    }
-
-    setTimeout(() => {
-      setSearchQuery("");
-    }, 100);
-
+  // Pagination
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
-  const clearFilters = useCallback(() => {
-    setSelectedCategoryId(null);
-    setSelectedSubCategoryId(null);
-    setSelectedNestedSubCategoryId(null);
-    setExpandedCategory(null);
-    setSearchQuery("");
-    setCurrentPage(1);
-    setIsMobileSidebarOpen(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, []);
+  // Simple sidebar component
+  const SidebarContent: React.FC<{ isMobile?: boolean }> = ({
+    isMobile = false,
+  }) => (
+    <div className="h-full flex flex-col">
+      {/* Simple Search Section */}
+      <div className="p-4 border-b border-gray-200">
+        <h2 className="font-semibold text-gray-900 mb-4">Search Products</h2>
 
-  const handleSearchChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const newValue = e.target.value;
-      setSearchQuery(newValue);
+        <div className="relative">
+          <TextField
+            inputRef={searchInputRef}
+            fullWidth
+            size="small"
+            placeholder="Search products..."
+            value={searchQuery}
+            autoFocus={true}
+            onChange={handleSearchInputChange}
+            onKeyDown={handleKeyPress}
+            onFocus={() => {
+              if (searchQuery.length >= 2 && !isSearchMode) {
+                setShowSuggestions(true);
+              }
+            }}
+            onBlur={() => {
+              // Delay hiding suggestions to allow clicks
+              setTimeout(() => setShowSuggestions(false), 200);
+            }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Search className="w-4 h-4 text-gray-400" />
+                </InputAdornment>
+              ),
+              endAdornment: searchQuery && (
+                <InputAdornment position="end">
+                  <IconButton size="small" onClick={handleClearSearch}>
+                    <X className="w-4 h-4" />
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                "&:hover fieldset": { borderColor: "#dc2626" },
+                "&.Mui-focused fieldset": { borderColor: "#dc2626" },
+              },
+            }}
+          />
 
-      setTimeout(() => {
-        if (searchInputRef.current) {
-          searchInputRef.current.focus();
-        }
-        if (mobileSearchInputRef.current) {
-          mobileSearchInputRef.current.focus();
-        }
-      }, 0);
-    },
-    []
-  );
-
-  const handleClearSearch = useCallback(() => {
-    setSearchQuery("");
-    setCurrentPage(1);
-  }, []);
-
-  const handleMobileCategorySelect = useCallback(
-    (categoryId: number | null) => {
-      setSelectedCategoryId(categoryId);
-      setSelectedSubCategoryId(null);
-      setSelectedNestedSubCategoryId(null);
-      setExpandedCategory(categoryId?.toString() || null);
-      setCurrentPage(1);
-      setSearchQuery("");
-      setIsMobileSidebarOpen(false);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    },
-    []
-  );
-
-  const handleMobileSubCategorySelect = useCallback((subCategoryId: number) => {
-    if (!subCategoryId || subCategoryId <= 0) return;
-    setSelectedSubCategoryId(subCategoryId);
-    setSelectedNestedSubCategoryId(null);
-    setCurrentPage(1);
-    setIsMobileSidebarOpen(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, []);
-
-  const handleMobileNestedSubCategorySelect = useCallback(
-    (nestedSubCategoryId: number) => {
-      if (!nestedSubCategoryId || nestedSubCategoryId <= 0) return;
-      setSelectedNestedSubCategoryId(nestedSubCategoryId);
-      setCurrentPage(1);
-      setIsMobileSidebarOpen(false);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    },
-    []
-  );
-
-  const SidebarContent = React.memo(
-    ({ isMobile = false }: { isMobile?: boolean }) => (
-      <div className="h-full flex flex-col">
-        <div className="p-4 border-b border-gray-200 flex-shrink-0">
-          <h2 className="font-semibold text-gray-900 mb-4">Categories</h2>
-
-          <div className="relative">
-            <TextField
-              inputRef={isMobile ? mobileSearchInputRef : searchInputRef}
-              type="text"
-              placeholder="Search categories..."
-              value={searchQuery}
-              onChange={handleSearchChange}
-              size="small"
-              fullWidth
-              variant="outlined"
-              autoComplete="off"
-              spellCheck={false}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Search className="w-4 h-4 text-gray-400" />
-                  </InputAdornment>
-                ),
-                endAdornment: searchQuery ? (
-                  <InputAdornment position="end">
-                    <IconButton
-                      onClick={handleClearSearch}
-                      size="small"
-                      aria-label="Clear search"
-                      sx={{ color: "gray" }}
+          {/* Simple Suggestions Dropdown */}
+          {showSuggestions && (
+            <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+              {suggestionsLoading ? (
+                <div className="p-3 text-center">
+                  <Loader2 className="w-4 h-4 animate-spin mx-auto text-gray-400" />
+                </div>
+              ) : suggestions.length > 0 ? (
+                <div className="p-2">
+                  {suggestions.map((suggestion, index) => (
+                    <div
+                      key={index}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleSuggestionClick(suggestion);
+                      }}
+                      className="p-2 hover:bg-gray-50 cursor-pointer text-sm rounded"
                     >
-                      <X className="w-4 h-4" />
-                    </IconButton>
-                  </InputAdornment>
-                ) : null,
-                sx: {
-                  height: "40px",
-                  fontSize: "14px",
-                  "& .MuiOutlinedInput-root": {
-                    borderRadius: "6px",
-                  },
-                },
-              }}
-              sx={{
-                "& .MuiOutlinedInput-root": {
-                  "& fieldset": {
-                    borderColor: "#e5e7eb",
-                  },
-                  "&:hover fieldset": {
-                    borderColor: "#d1d5db",
-                  },
-                  "&.Mui-focused fieldset": {
-                    borderColor: "#dc2626",
-                    borderWidth: "1px",
-                  },
-                },
-              }}
-            />
-          </div>
+                      {suggestion.text}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                debouncedQuery.length >= 2 && (
+                  <div className="p-3 text-center text-sm text-gray-500">
+                    No suggestions found
+                  </div>
+                )
+              )}
+            </div>
+          )}
         </div>
 
+        <div className="flex gap-2 mt-2">
+          <Button
+            onClick={handleSearch}
+            disabled={!searchQuery.trim()}
+            className="flex-1 bg-red-600 hover:bg-red-700"
+            size="sm"
+          >
+            Search
+          </Button>
+          {(isSearchMode || searchQuery) && (
+            <Button variant="outline" onClick={handleClearSearch} size="sm">
+              Clear
+            </Button>
+          )}
+        </div>
+
+        {isSearchMode && (
+          <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm">
+            <span className="text-blue-800">
+              Results for: <strong>"{searchQuery}"</strong>
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Categories Section */}
+      {!isSearchMode && (
         <div className="flex-1 overflow-y-auto p-4">
-          {/* Search Results */}
-          {searchQuery && filteredCategories.length > 0 && (
-            <div className="mb-4">
-              <div className="text-xs text-gray-500 mb-2">
-                Search Results ({filteredCategories.length})
-              </div>
-              <div className="space-y-1">
-                {filteredCategories.map((item) => (
-                  <div
-                    key={`${item.type}-${item.id}`}
-                    onClick={() => {
-                      handleSearchResultClick(item);
-                      if (isMobile) setIsMobileSidebarOpen(false);
-                    }}
-                    className="p-3 hover:bg-gray-50 rounded cursor-pointer text-sm transition-colors border border-gray-100 hover:border-gray-200"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-gray-900 truncate">
-                          {item.name}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1 truncate">
-                          {item.description}
-                        </div>
-                        <div className="text-xs text-blue-600 mt-1 truncate">
-                          {item.fullPath}
-                        </div>
-                      </div>
-                      <div className="ml-2 flex-shrink-0">
-                        <span
-                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            item.type === "category"
-                              ? "bg-blue-100 text-blue-800"
-                              : item.type === "subcategory"
-                              ? "bg-green-100 text-green-800"
-                              : "bg-purple-100 text-purple-800"
-                          }`}
-                        >
-                          {item.type === "category"
-                            ? "Category"
-                            : item.type === "subcategory"
-                            ? "Subcategory"
-                            : "Nested"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+          <h3 className="font-medium text-gray-900 mb-3">Categories</h3>
+
+          <div className="space-y-1">
+            <div
+              onClick={clearFilters}
+              className={cn(
+                "p-2 rounded cursor-pointer text-sm transition-colors",
+                !selectedCategoryId
+                  ? "bg-red-50 text-red-700 font-medium"
+                  : "text-gray-700 hover:bg-gray-50"
+              )}
+            >
+              All Categories
             </div>
-          )}
 
-          {/* No search results */}
-          {searchQuery && filteredCategories.length === 0 && (
-            <div className="mb-4 text-center py-8">
-              <div className="text-sm text-gray-500">
-                No categories found for "{searchQuery}"
-              </div>
-              <button
-                onClick={handleClearSearch}
-                className="text-xs text-blue-600 hover:text-blue-800 mt-2"
-              >
-                Clear search
-              </button>
-            </div>
-          )}
-
-          {/* Category List */}
-          {!searchQuery && (
-            <div className="space-y-1">
-              <div
-                onClick={() =>
-                  isMobile ? handleMobileCategorySelect(null) : clearFilters()
-                }
-                className={cn(
-                  "p-2 rounded cursor-pointer text-sm transition-colors",
-                  !selectedCategoryId
-                    ? "bg-red-50 text-red-700 font-medium"
-                    : "text-gray-700 hover:bg-gray-50"
-                )}
-              >
-                All Categories
-              </div>
-
-              {categories.map((category) => {
-                const categoryId = parseInt(category.id);
-                const hookData = allCategoryHooks.find(
-                  (_, index) =>
-                    STATIC_CATEGORIES[index].entity_id === categoryId
-                );
-
-                return (
-                  <div key={category.id} className="space-y-1">
-                    <div
-                      onClick={() => {
-                        if (isMobile) {
-                          handleMobileCategorySelect(categoryId);
-                        } else {
-                          if (selectedCategoryId === categoryId) {
-                            setSelectedCategoryId(null);
-                            setSelectedSubCategoryId(null);
-                            setSelectedNestedSubCategoryId(null);
-                            setExpandedCategory(null);
-                          } else {
-                            handleCategoryChange({} as any, category.id);
-                          }
-                        }
-                      }}
+            {STATIC_CATEGORIES.map((category) => (
+              <div key={category.entity_id} className="space-y-1">
+                <div
+                  onClick={() => handleCategoryClick(category.entity_id)}
+                  className={cn(
+                    "p-2 rounded cursor-pointer text-sm flex items-center justify-between transition-colors",
+                    selectedCategoryId === category.entity_id
+                      ? "bg-red-50 text-red-700 font-medium"
+                      : "text-gray-700 hover:bg-gray-50"
+                  )}
+                >
+                  <span>{category.name}</span>
+                  {category.has_children && (
+                    <ChevronDown
                       className={cn(
-                        "p-2 rounded cursor-pointer text-sm flex items-center justify-between transition-colors",
-                        selectedCategoryId === categoryId
-                          ? "bg-red-50 text-red-700 font-medium"
-                          : "text-gray-700 hover:bg-gray-50"
+                        "w-4 h-4 transition-transform duration-200",
+                        selectedCategoryId === category.entity_id &&
+                          "rotate-180"
                       )}
-                    >
-                      <span>{category.name}</span>
-                      {category.has_children && (
-                        <ChevronDown
-                          className={cn(
-                            "w-4 h-4 transition-transform duration-200",
-                            selectedCategoryId === categoryId && "rotate-180"
-                          )}
-                        />
-                      )}
-                    </div>
+                    />
+                  )}
+                </div>
 
-                    {selectedCategoryId === categoryId && (
-                      <div className="ml-4 space-y-1 animate-in slide-in-from-top-2 duration-200">
-                        {subCategoriesLoading ? (
-                          <div className="space-y-1">
-                            {[1, 2, 3].map((i) => (
-                              <Skeleton key={i} className="h-8 w-full" />
-                            ))}
-                          </div>
-                        ) : hookData?.error ? (
-                          <div className="text-red-500 text-xs p-2">
-                            Error loading subcategories
-                          </div>
-                        ) : (
-                          subCategories.map((subCat) => (
-                            <div key={subCat.entity_id} className="space-y-1">
-                              <div
-                                onClick={() => {
-                                  if (isMobile) {
-                                    handleMobileSubCategorySelect(
-                                      subCat.entity_id
-                                    );
-                                  } else {
-                                    handleSubCategoryClick(subCat.entity_id);
-                                  }
-                                }}
+                {selectedCategoryId === category.entity_id && (
+                  <div className="ml-4 space-y-1">
+                    {subCategoriesLoading ? (
+                      <div className="space-y-1">
+                        {[1, 2, 3].map((i) => (
+                          <Skeleton key={i} className="h-8 w-full" />
+                        ))}
+                      </div>
+                    ) : (
+                      subCategories.map((subCat) => (
+                        <div key={subCat.entity_id} className="space-y-1">
+                          <div
+                            onClick={() =>
+                              handleSubCategoryClick(subCat.entity_id)
+                            }
+                            className={cn(
+                              "p-1.5 rounded cursor-pointer text-sm flex items-center justify-between transition-colors",
+                              selectedSubCategoryId === subCat.entity_id
+                                ? "bg-red-50 text-red-700 font-medium"
+                                : "text-gray-600 hover:bg-gray-50"
+                            )}
+                          >
+                            <span>{subCat.name}</span>
+                            {subCat.has_children && (
+                              <ChevronDown
                                 className={cn(
-                                  "p-1.5 rounded cursor-pointer text-sm flex items-center justify-between transition-colors",
-                                  selectedSubCategoryId === subCat.entity_id
-                                    ? "bg-red-50 text-red-700 font-medium"
-                                    : "text-gray-600 hover:bg-gray-50"
+                                  "w-3 h-3 transition-transform duration-200",
+                                  selectedSubCategoryId === subCat.entity_id &&
+                                    "rotate-180"
                                 )}
-                              >
-                                <span>{subCat.name}</span>
-                                {subCat.has_children && (
-                                  <ChevronDown
-                                    className={cn(
-                                      "w-3 h-3 transition-transform duration-200",
-                                      selectedSubCategoryId ===
-                                        subCat.entity_id && "rotate-180"
-                                    )}
-                                  />
-                                )}
-                              </div>
+                              />
+                            )}
+                          </div>
 
-                              {selectedSubCategoryId === subCat.entity_id && (
-                                <div className="ml-4 space-y-1 animate-in slide-in-from-top-2 duration-200">
-                                  {nestedSubCategoriesLoading ? (
-                                    <div className="space-y-1">
-                                      {[1, 2].map((i) => (
-                                        <Skeleton
-                                          key={i}
-                                          className="h-6 w-full"
-                                        />
-                                      ))}
-                                    </div>
-                                  ) : nestedSubCategoriesError ? (
-                                    <div className="text-red-500 text-xs p-2">
-                                      Error loading nested categories
-                                    </div>
-                                  ) : (
-                                    nestedSubCategories.map((nestedSubCat) => (
-                                      <div
-                                        key={nestedSubCat.entity_id}
-                                        onClick={() =>
-                                          isMobile
-                                            ? handleMobileNestedSubCategorySelect(
-                                                nestedSubCat.entity_id
-                                              )
-                                            : handleNestedSubCategoryClick(
-                                                nestedSubCat.entity_id
-                                              )
-                                        }
-                                        className={cn(
-                                          "p-1 rounded cursor-pointer text-xs transition-colors",
-                                          selectedNestedSubCategoryId ===
-                                            nestedSubCat.entity_id
-                                            ? "bg-red-50 text-red-700 font-medium"
-                                            : "text-gray-600 hover:bg-gray-50"
-                                        )}
-                                      >
-                                        {nestedSubCat.name}
-                                      </div>
-                                    ))
-                                  )}
+                          {selectedSubCategoryId === subCat.entity_id && (
+                            <div className="ml-4 space-y-1">
+                              {nestedSubCategoriesLoading ? (
+                                <div className="space-y-1">
+                                  {[1, 2].map((i) => (
+                                    <Skeleton key={i} className="h-6 w-full" />
+                                  ))}
                                 </div>
+                              ) : (
+                                nestedSubCategories.map((nestedSubCat) => (
+                                  <div
+                                    key={nestedSubCat.entity_id}
+                                    onClick={() =>
+                                      handleNestedSubCategoryClick(
+                                        nestedSubCat.entity_id
+                                      )
+                                    }
+                                    className={cn(
+                                      "p-1 rounded cursor-pointer text-xs transition-colors",
+                                      selectedNestedSubCategoryId ===
+                                        nestedSubCat.entity_id
+                                        ? "bg-red-50 text-red-700 font-medium"
+                                        : "text-gray-600 hover:bg-gray-50"
+                                    )}
+                                  >
+                                    {nestedSubCat.name}
+                                  </div>
+                                ))
                               )}
                             </div>
-                          ))
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      ))
                     )}
                   </div>
-                );
-              })}
-            </div>
-          )}
+                )}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
-    )
+      )}
+    </div>
   );
 
-  const handlePageChange = useCallback(
-    (page: number) => {
-      if (pagination && (page < 1 || page > pagination.pages)) {
-        return;
-      }
-      setCurrentPage(page);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    },
-    [pagination]
-  );
-
-  const generatePaginationNumbers = useCallback(() => {
-    if (!pagination || pagination.pages <= 1) return [];
-
-    const totalPages = pagination.pages;
-    const current = currentPage;
-    const delta = 2;
-
-    let pages: (number | string)[] = [];
-
-    if (totalPages <= 7) {
-      pages = Array.from({ length: totalPages }, (_, i) => i + 1);
-    } else {
-      if (current <= delta + 1) {
-        pages = [
-          ...Array.from({ length: delta + 2 }, (_, i) => i + 1),
-          "...",
-          totalPages,
-        ];
-      } else if (current >= totalPages - delta) {
-        pages = [
-          1,
-          "...",
-          ...Array.from(
-            { length: delta + 2 },
-            (_, i) => totalPages - delta - 1 + i
-          ),
-        ];
-      } else {
-        pages = [
-          1,
-          "...",
-          ...Array.from(
-            { length: delta * 2 + 1 },
-            (_, i) => current - delta + i
-          ),
-          "...",
-          totalPages,
-        ];
-      }
-    }
-
-    return pages;
-  }, [pagination, currentPage]);
-
-  // Error boundary for rendering
-  if (productsError) {
+  if (displayError) {
     return (
       <div className="px-4 py-6">
         <div className="text-center py-12">
           <p className="text-red-500">
-            Error loading products: {productsError.message}
+            Error loading products: {displayError.message}
           </p>
           <Button onClick={() => window.location.reload()} className="mt-4">
             Retry
@@ -1043,7 +705,7 @@ export default function StoreProducts() {
         <SidebarContent />
       </div>
 
-      {/* Mobile Header with Filter Button */}
+      {/* Mobile Header */}
       <div className="lg:hidden bg-white border-b border-gray-200 p-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold text-gray-900">Products</h1>
@@ -1065,79 +727,36 @@ export default function StoreProducts() {
               <SheetTrigger asChild>
                 <Button variant="outline" size="sm">
                   <Filter className="w-4 h-4 mr-2" />
-                  Filters
+                  {isSearchMode ? "Search" : "Filters"}
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-80 p-0">
                 <SheetHeader className="p-4 border-b">
-                  <SheetTitle>Filter Products</SheetTitle>
+                  <SheetTitle>
+                    {isSearchMode ? "Search Products" : "Filter Products"}
+                  </SheetTitle>
                 </SheetHeader>
                 <SidebarContent isMobile={true} />
               </SheetContent>
             </Sheet>
           </div>
         </div>
-
-        {/* Mobile breadcrumb */}
-        {(selectedCategoryId ||
-          selectedSubCategoryId ||
-          selectedNestedSubCategoryId) && (
-          <div className="mt-3 flex items-center justify-between">
-            <div className="text-sm text-gray-600">
-              {selectedCategoryId && (
-                <span className="font-medium">
-                  {
-                    STATIC_CATEGORIES.find(
-                      (cat) => cat.entity_id === selectedCategoryId
-                    )?.name
-                  }
-                </span>
-              )}
-              {selectedSubCategoryId && (
-                <span>
-                  {" > "}
-                  <span className="font-medium">
-                    {
-                      subCategories.find(
-                        (sub) => sub.entity_id === selectedSubCategoryId
-                      )?.name
-                    }
-                  </span>
-                </span>
-              )}
-              {selectedNestedSubCategoryId && (
-                <span>
-                  {" > "}
-                  <span className="font-medium">
-                    {
-                      nestedSubCategories.find(
-                        (nested) =>
-                          nested.entity_id === selectedNestedSubCategoryId
-                      )?.name
-                    }
-                  </span>
-                </span>
-              )}
-            </div>
-            <Button variant="ghost" size="sm" onClick={clearFilters}>
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
-        )}
       </div>
 
-      {/* Main Content Area */}
+      {/* Main Content */}
       <div className="flex-1 overflow-auto">
         <div className="p-4 lg:p-6">
           {/* Desktop Header */}
           <div className="hidden lg:flex justify-between items-center mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Products</h1>
-              {pagination && (
+              <h1 className="text-2xl font-bold text-gray-900">
+                {isSearchMode ? `Search Results` : "Products"}
+              </h1>
+              {displayPagination && (
                 <p className="text-sm text-gray-500 mt-1">
-                  Showing {(currentPage - 1) * 12 + 1}-
-                  {Math.min(currentPage * 12, pagination.total || 0)} of{" "}
-                  {pagination.total || 0} products
+                  {isSearchMode
+                    ? `${searchPagination?.total || 0} results found`
+                    : `${pagination?.total || 0} products found`}
                 </p>
               )}
             </div>
@@ -1154,17 +773,8 @@ export default function StoreProducts() {
             </Link>
           </div>
 
-          {/* Mobile Product Count */}
-          <div className="lg:hidden mb-4">
-            {pagination && (
-              <p className="text-sm text-gray-500">
-                {pagination.total || 0} products found
-              </p>
-            )}
-          </div>
-
           {/* Products Grid */}
-          {productsLoading ? (
+          {displayLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
               {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                 <Card key={i} className="overflow-hidden">
@@ -1182,19 +792,24 @@ export default function StoreProducts() {
                 </Card>
               ))}
             </div>
-          ) : products.length > 0 ? (
+          ) : displayProducts.length > 0 ? (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6">
-                {products.map((product) => {
-                  const isThisProductLoading = loadingProductId === product.id;
-                  const isThisProductUpdating =
-                    updatingProductId === product.id;
-                  const cartQuantity = getProductQuantityInCart(product.id);
+                {displayProducts.map((product, index) => {
+                  const productId =
+                    typeof product.id === "string"
+                      ? parseInt(product.id, 10)
+                      : product.id;
+                  const isThisProductLoading = loadingProductId === productId;
+                  const isThisProductUpdating = updatingProductId === productId;
+                  const cartQuantity = getProductQuantityInCart(productId);
                   const isInCart = cartQuantity > 0;
 
                   return (
                     <Card
-                      key={product.id}
+                      key={`${
+                        isSearchMode ? "search" : "product"
+                      }-${productId}-${index}`}
                       className="hover:shadow-lg transition-shadow overflow-hidden"
                     >
                       <div className="aspect-square relative overflow-hidden bg-gray-50">
@@ -1208,9 +823,7 @@ export default function StoreProducts() {
                               target.style.display = "none";
                               const fallback =
                                 target.nextElementSibling as HTMLElement;
-                              if (fallback) {
-                                fallback.style.display = "flex";
-                              }
+                              if (fallback) fallback.style.display = "flex";
                             }}
                           />
                         ) : null}
@@ -1225,7 +838,9 @@ export default function StoreProducts() {
                               <Grid3X3 className="w-6 h-6 lg:w-8 lg:h-8 text-gray-400" />
                             </div>
                             <p className="text-xs text-gray-500 font-medium">
-                              {product.manufacturer}
+                              {("manufacturer" in product
+                                ? product.manufacturer
+                                : product.category) || "Product"}
                             </p>
                           </div>
                         </div>
@@ -1235,17 +850,14 @@ export default function StoreProducts() {
                           size="sm"
                           className={cn(
                             "absolute top-2 left-2 h-7 w-7 lg:h-8 lg:w-8 p-0 rounded-full bg-white shadow-sm",
-                            isInWishlist(product.id) && "text-red-500"
+                            isInWishlist(productId) && "text-red-500"
                           )}
                           onClick={() => handleWishlistToggle(product)}
-                          disabled={
-                            isAddingToWishlist || isRemovingFromWishlist
-                          }
                         >
                           <Heart
                             className={cn(
                               "w-3 h-3 lg:w-4 lg:h-4",
-                              isInWishlist(product.id) && "fill-current"
+                              isInWishlist(productId) && "fill-current"
                             )}
                           />
                         </Button>
@@ -1257,24 +869,55 @@ export default function StoreProducts() {
                             </Badge>
                           </div>
                         )}
+
+                        {isSearchMode && (
+                          <div className="absolute top-2 right-2">
+                            <Badge className="bg-blue-500 text-white text-xs">
+                              Search Result
+                            </Badge>
+                          </div>
+                        )}
                       </div>
 
                       <CardHeader className="p-3 lg:p-4 pb-2 lg:pb-3">
                         <CardTitle className="text-sm lg:text-base leading-tight line-clamp-2">
                           {product.name}
                         </CardTitle>
-                        {product.sku && (
-                          <Badge variant="outline" className="text-xs w-fit">
-                            SKU: {product.sku}
-                          </Badge>
+
+                        {isSearchMode ? (
+                          <div className="space-y-1">
+                            {"product_code" in product &&
+                              product.product_code && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs w-fit"
+                                >
+                                  Code: {product.product_code}
+                                </Badge>
+                              )}
+                            {"category" in product && product.category && (
+                              <Badge
+                                variant="secondary"
+                                className="text-xs w-fit"
+                              >
+                                {product.category}
+                              </Badge>
+                            )}
+                          </div>
+                        ) : (
+                          "sku" in product &&
+                          product.sku && (
+                            <Badge variant="outline" className="text-xs w-fit">
+                              SKU: {product.sku}
+                            </Badge>
+                          )
                         )}
                       </CardHeader>
 
                       <CardContent className="p-3 lg:p-4 pt-0">
                         <div className="space-y-2">
-                          {/* View Product Button */}
                           <Link
-                            to={`/store/product/${product.id}`}
+                            to={`/store/product/${productId}`}
                             className="block"
                           >
                             <Button
@@ -1286,11 +929,8 @@ export default function StoreProducts() {
                             </Button>
                           </Link>
 
-                          {/* Cart Controls */}
                           {!isInCart ? (
-                            /* Quantity Selector + Add to Cart - Show when not in cart */
                             <div className="space-y-2">
-                              {/* Quantity Selector */}
                               <div className="flex items-center justify-between bg-gray-50 rounded p-2">
                                 <span className="text-sm font-medium text-gray-700">
                                   Quantity:
@@ -1301,32 +941,28 @@ export default function StoreProducts() {
                                     size="sm"
                                     onClick={() =>
                                       updateLocalQuantity(
-                                        product.id,
-                                        getLocalQuantity(product.id) - 1
+                                        productId,
+                                        getLocalQuantity(productId) - 1
                                       )
                                     }
-                                    disabled={getLocalQuantity(product.id) <= 1}
+                                    disabled={getLocalQuantity(productId) <= 1}
                                     className="h-7 w-7 p-0"
                                   >
                                     <Minus className="w-3 h-3" />
                                   </Button>
-
                                   <span className="px-3 py-1 bg-white rounded border text-sm font-medium min-w-[3rem] text-center">
-                                    {getLocalQuantity(product.id)}
+                                    {getLocalQuantity(productId)}
                                   </span>
-
                                   <Button
                                     variant="ghost"
                                     size="sm"
                                     onClick={() =>
                                       updateLocalQuantity(
-                                        product.id,
-                                        getLocalQuantity(product.id) + 1
+                                        productId,
+                                        getLocalQuantity(productId) + 1
                                       )
                                     }
-                                    disabled={
-                                      getLocalQuantity(product.id) >= 99
-                                    }
+                                    disabled={getLocalQuantity(productId) >= 99}
                                     className="h-7 w-7 p-0"
                                   >
                                     <Plus className="w-3 h-3" />
@@ -1334,32 +970,28 @@ export default function StoreProducts() {
                                 </div>
                               </div>
 
-                              {/* Add to Cart Button */}
                               <Button
                                 onClick={() => handleAddToCart(product)}
                                 disabled={
-                                  isThisProductLoading ||
-                                  isThisProductUpdating ||
-                                  product.status === 0
+                                  isThisProductLoading || isThisProductUpdating
                                 }
                                 size="sm"
                                 className="w-full bg-red-600 hover:bg-red-700 text-white"
                               >
                                 {isThisProductLoading ? (
                                   <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    <Loader2 className="w-3 h-3 animate-spin" />
                                     Adding...
                                   </div>
                                 ) : (
                                   <div className="flex items-center gap-2">
                                     <ShoppingCart className="w-4 h-4" />
-                                    Add {getLocalQuantity(product.id)} to Cart
+                                    Add {getLocalQuantity(productId)} to Cart
                                   </div>
                                 )}
                               </Button>
                             </div>
                           ) : (
-                            /* Cart Quantity Controls - Only show when in cart */
                             <div className="flex items-center justify-between bg-green-50 rounded p-2 border border-green-200">
                               <span className="text-sm font-medium text-green-700">
                                 In Cart:
@@ -1369,12 +1001,10 @@ export default function StoreProducts() {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() =>
-                                    cartQuantity === 1
-                                      ? handleRemoveFromCart(product)
-                                      : handleUpdateCartQuantity(
-                                          product,
-                                          cartQuantity - 1
-                                        )
+                                    handleUpdateCartQuantity(
+                                      product,
+                                      cartQuantity - 1
+                                    )
                                   }
                                   disabled={
                                     isThisProductUpdating ||
@@ -1388,16 +1018,14 @@ export default function StoreProducts() {
                                     <Minus className="w-3 h-3" />
                                   )}
                                 </Button>
-
                                 <span className="px-3 py-1 bg-white rounded border text-sm font-medium min-w-[3rem] text-center">
                                   {isThisProductUpdating ||
                                   isThisProductLoading ? (
-                                    <div className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                                    <Loader2 className="w-3 h-3 animate-spin mx-auto" />
                                   ) : (
                                     cartQuantity
                                   )}
                                 </span>
-
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1410,8 +1038,7 @@ export default function StoreProducts() {
                                   disabled={
                                     isThisProductUpdating ||
                                     isThisProductLoading ||
-                                    cartQuantity >= 99 ||
-                                    product.status === 0
+                                    cartQuantity >= 99
                                   }
                                   className="h-7 w-7 p-0"
                                 >
@@ -1427,80 +1054,47 @@ export default function StoreProducts() {
                 })}
               </div>
 
-              {/* Responsive Pagination */}
-              {pagination && pagination.pages > 1 && (
-                <div className="mt-6 lg:mt-8">
-                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                    <div className="hidden sm:block text-sm text-gray-600">
-                      Page {currentPage} of {pagination.pages}
-                      {pagination.total && (
-                        <span className="ml-2">
-                          ({pagination.total} total products)
-                        </span>
-                      )}
-                    </div>
+              {/* Simple Pagination */}
+              {displayPagination && (
+                <div className="mt-6 lg:mt-8 flex justify-center">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      Previous
+                    </Button>
 
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handlePageChange(currentPage - 1)}
-                        disabled={currentPage === 1}
-                        className="px-2 lg:px-3"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                        <span className="hidden sm:inline ml-1">Prev</span>
-                      </Button>
+                    <span className="px-4 py-2 text-sm">
+                      Page {currentPage} of{" "}
+                      {isSearchMode
+                        ? Math.ceil(
+                            (searchPagination?.total || 0) /
+                              (searchPagination?.max_results || 12)
+                          )
+                        : pagination?.pages || 1}
+                    </span>
 
-                      <div className="flex gap-1">
-                        {generatePaginationNumbers()
-                          .slice(0, window.innerWidth < 640 ? 5 : undefined)
-                          .map((page, index) => {
-                            if (page === "...") {
-                              return (
-                                <span
-                                  key={`ellipsis-${index}`}
-                                  className="px-2 lg:px-3 py-2 text-gray-500 text-sm"
-                                >
-                                  ...
-                                </span>
-                              );
-                            }
-
-                            const pageNum = page as number;
-                            return (
-                              <Button
-                                key={pageNum}
-                                variant={
-                                  currentPage === pageNum
-                                    ? "default"
-                                    : "outline"
-                                }
-                                size="sm"
-                                onClick={() => handlePageChange(pageNum)}
-                                className="min-w-[32px] px-2 lg:px-3"
-                              >
-                                {pageNum}
-                              </Button>
-                            );
-                          })}
-                      </div>
-
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handlePageChange(currentPage + 1)}
-                        disabled={currentPage === pagination.pages}
-                        className="px-2 lg:px-3"
-                      >
-                        <span className="hidden sm:inline mr-1">Next</span>
-                        <ChevronRight className="w-4 h-4" />
-                      </Button>
-                    </div>
-
-                    <div className="sm:hidden text-sm text-gray-600 text-center">
-                      Page {currentPage} of {pagination.pages}
-                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={
+                        isSearchMode
+                          ? currentPage >=
+                            Math.ceil(
+                              (searchPagination?.total || 0) /
+                                (searchPagination?.max_results || 12)
+                            )
+                          : currentPage === (pagination?.pages || 1)
+                      }
+                    >
+                      Next
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
                   </div>
                 </div>
               )}
@@ -1509,10 +1103,12 @@ export default function StoreProducts() {
             <div className="text-center py-12">
               <Grid3X3 className="w-12 h-12 lg:w-16 lg:h-16 mx-auto text-gray-400 mb-4" />
               <p className="text-gray-500 text-base lg:text-lg">
-                No products found
+                {isSearchMode
+                  ? `No products found for "${searchQuery}"`
+                  : "No products found"}
               </p>
               <Button variant="outline" onClick={clearFilters} className="mt-4">
-                Clear Filters
+                {isSearchMode ? "Clear Search" : "Clear Filters"}
               </Button>
             </div>
           )}
