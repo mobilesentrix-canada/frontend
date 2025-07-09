@@ -442,9 +442,6 @@ export default function StoreCart() {
                 <CreditCard className="w-5 h-5" />
                 Order Summary
               </CardTitle>
-              <CardDescription>
-                {count} {count === 1 ? "item" : "items"} in your cart
-              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-3 pt-4">
