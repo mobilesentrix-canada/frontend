@@ -879,7 +879,7 @@ export default function StoreProducts(): JSX.Element {
                         )}
                       </div>
 
-                      <CardHeader className="p-3 lg:p-4 pb-2 lg:pb-3">
+                      <CardHeader className="p-3 lg:p-4 pb-2 lg:pb-0">
                         <CardTitle className="text-sm lg:text-base leading-tight line-clamp-2">
                           {product.name}
                         </CardTitle>
@@ -912,6 +912,12 @@ export default function StoreProducts(): JSX.Element {
                             </Badge>
                           )
                         )}
+                        <div className="flex items-center gap-2">
+                          <span>Price:</span>
+                          <span className="text-xl font-bold text-green-600">
+                            ${product.price?.toFixed(2) || "0.00"}
+                          </span>
+                        </div>
                       </CardHeader>
 
                       <CardContent className="p-3 lg:p-4 pt-0">
