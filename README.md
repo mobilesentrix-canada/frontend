@@ -166,3 +166,4 @@ For other hosting platforms, build the project and serve the `dist/` directory.
 ## License
 
 This project is private and proprietary.
+# frontend
