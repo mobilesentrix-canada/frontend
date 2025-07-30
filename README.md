@@ -1,74 +1,168 @@
-# Welcome to your Lovable project
+# MS Store Management - Frontend
 
-## Project info
+A modern React-based frontend application for store management built with Vite, TypeScript, and Tailwind CSS.
 
-**URL**: https://lovable.dev/projects/85055779-0f56-4e2e-bdda-de8c73642410
+🌐 **Live Demo**: [https://ms-store-management.vercel.app/login](https://ms-store-management.vercel.app/login)
 
-## How can I edit this code?
+## Tech Stack
 
-There are several ways of editing your application.
+- **Framework**: React 18 with TypeScript
+- **Build Tool**: Vite
+- **Styling**: Tailwind CSS with shadcn/ui components
+- **UI Components**: Radix UI primitives
+- **State Management**: TanStack Query (React Query)
+- **HTTP Client**: Axios
+- **Routing**: React Router DOM
+- **Form Handling**: React Hook Form with Zod validation
+- **Charts**: Recharts
+- **Theme**: next-themes for dark/light mode
+- **Icons**: Lucide React
 
-**Use Lovable**
+## Getting Started
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/85055779-0f56-4e2e-bdda-de8c73642410) and start prompting.
+### Prerequisites
 
-Changes made via Lovable will be committed automatically to this repo.
+- Node.js (v16 or higher)
+- npm or yarn package manager
 
-**Use your preferred IDE**
+### Installation
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+1. **Clone the repository**
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+   ```bash
+   git clone <repository-url>
+   cd ms-store-management-frontend
+   ```
 
-Follow these steps:
+2. **Install dependencies**
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+   ```bash
+   npm install
+   ```
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+3. **Environment Setup**
 
-# Step 3: Install the necessary dependencies.
-npm i
+   Create a `.env` file in the root directory:
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+   ```env
+   VITE_API_URL='http://localhost:3000/api'
+   ```
+
+4. **Start development server**
+
+   ```bash
+   npm run dev
+   ```
+
+   The application will be available at `http://localhost:5173`
+
+## Available Scripts
+
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run build:dev` - Build in development mode
+- `npm run lint` - Run ESLint
+- `npm run preview` - Preview production build locally
+
+## Project Structure
+
+```
+src/
+├── components/       # Reusable UI components
+├── pages/           # Page components
+├── hooks/           # Custom React hooks
+├── lib/             # Utility functions and configurations
+├── types/           # TypeScript type definitions
+└── styles/          # Global styles and Tailwind config
 ```
 
-**Edit a file directly in GitHub**
+## Key Dependencies
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Core Framework
 
-**Use GitHub Codespaces**
+- **React 18** - Modern React with concurrent features
+- **TypeScript** - Type safety and better developer experience
+- **Vite** - Fast build tool and development server
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### UI & Styling
 
-## What technologies are used for this project?
+- **Tailwind CSS** - Utility-first CSS framework
+- **shadcn/ui** - High-quality React components built on Radix UI
+- **Radix UI** - Low-level UI primitives for accessibility
+- **Lucide React** - Beautiful & consistent icon library
 
-This project is built with:
+### Data & State Management
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+- **TanStack Query** - Powerful data synchronization for React
+- **Axios** - Promise-based HTTP client
+- **React Hook Form** - Performant forms with easy validation
+- **Zod** - TypeScript-first schema validation
 
-## How can I deploy this project?
+### Additional Features
 
-Simply open [Lovable](https://lovable.dev/projects/85055779-0f56-4e2e-bdda-de8c73642410) and click on Share -> Publish.
+- **React Router DOM** - Declarative routing
+- **Recharts** - Composable charting library
+- **next-themes** - Theme management
+- **date-fns** - Modern JavaScript date utility library
 
-## Can I connect a custom domain to my Lovable project?
+## Environment Variables
 
-Yes, you can!
+| Variable       | Description          | Default                     |
+| -------------- | -------------------- | --------------------------- |
+| `VITE_API_URL` | Backend API base URL | `http://localhost:3000/api` |
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## Building for Production
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
-# MS-Store-Management
+1. **Build the application**
+
+   ```bash
+   npm run build
+   ```
+
+2. **Preview the build**
+   ```bash
+   npm run preview
+   ```
+
+The build artifacts will be stored in the `dist/` directory.
+
+## Deployment
+
+This project is configured for deployment on Vercel. The live application is available at:
+[https://ms-store-management.vercel.app/login](https://ms-store-management.vercel.app/login)
+
+For other hosting platforms, build the project and serve the `dist/` directory.
+
+## Development Guidelines
+
+### Code Style
+
+- Follow TypeScript best practices
+- Use functional components with hooks
+- Implement proper error boundaries
+- Write accessible components
+
+### Component Development
+
+- Use shadcn/ui components when possible
+- Follow the established component structure
+- Implement proper TypeScript types
+- Use Tailwind CSS for styling
+
+### State Management
+
+- Use TanStack Query for server state
+- Use React hooks for local component state
+- Implement proper error handling
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run linting and tests
+5. Submit a pull request
+
+## License
+
+This project is private and proprietary.
